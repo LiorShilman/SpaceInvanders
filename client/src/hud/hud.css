@@ -52,6 +52,11 @@
   font-variant-numeric: tabular-nums;
   direction: ltr;
   display: inline-block;
+  /* The label above it is RTL (text-align defaults to "start" = right); this
+     span overrides to LTR for correct digit order in "0:05", but that same
+     override also flips its own default start-alignment to the left,
+     making it drift away from the right-aligned label above it. */
+  text-align: right;
 }
 
 .health-track {

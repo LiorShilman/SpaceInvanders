@@ -5,7 +5,7 @@ import { ARENA, COLORS, FORMATION, HIT_RADIUS, PROJECTILE, SHIELD, SHIP, WAVE_SC
 import { useGameStore } from "../state/gameStore";
 import { useKeyboard } from "../hooks/useKeyboard";
 import { Ship } from "./Ship";
-import { Enemy } from "./Enemy";
+import { Enemies, type EnemiesHandle } from "./Enemies";
 import { Projectile } from "./Projectile";
 import { Shields } from "./Shields";
 import { Starfield } from "./Starfield";
@@ -132,10 +132,7 @@ export function Scene() {
   const aimLineRef = useRef<THREE.Mesh>(null);
   const lockReticleRef = useRef<THREE.Group>(null);
   const explosions = useExplosions();
-  const enemyRefs = useMemo(
-    () => Array.from({ length: ENEMY_COUNT }, () => createRef<THREE.Group>()),
-    [],
-  );
+  const enemiesRef = useRef<EnemiesHandle>(null);
   const layout = useMemo(buildFormationLayout, []);
 
   const shieldLayout = useMemo(buildShieldLayout, []);
@@ -186,8 +183,7 @@ export function Scene() {
 
     for (let i = 0; i < ENEMY_COUNT; i++) {
       enemyAlive.current[i] = true;
-      const mesh = enemyRefs[i].current;
-      if (mesh) mesh.visible = true;
+      enemiesRef.current?.setEnemy(i, layout[i]);
     }
     aliveCount.current = ENEMY_COUNT;
 
@@ -402,8 +398,7 @@ export function Scene() {
           const dz = mesh.position.z - ez;
           if (dx * dx + dy * dy + dz * dz <= HIT_RADIUS.playerProjectileVsEnemy ** 2) {
             enemyAlive.current[e] = false;
-            const enemyMesh = enemyRefs[e].current;
-            if (enemyMesh) enemyMesh.visible = false;
+            enemiesRef.current?.setEnemy(e, null);
             playerBolts.current.active[i] = false;
             mesh.visible = false;
             explosions.trigger(new THREE.Vector3(ex, ey, ez), COLORS.amber);
@@ -490,9 +485,7 @@ export function Scene() {
 
       <group ref={formationRef} position={[0, 0, FORMATION.startZ]}>
         <pointLight color={COLORS.amber} intensity={3} distance={14} position={[0, 3.7, 1]} />
-        {layout.map((pos, i) => (
-          <Enemy key={i} ref={enemyRefs[i]} position={pos} />
-        ))}
+        <Enemies ref={enemiesRef} count={ENEMY_COUNT} />
       </group>
 
       {playerBolts.current.refs.map((ref, i) => (
