@@ -291,7 +291,7 @@ export function Scene() {
       const move = new THREE.Vector3(
         (input.current.right ? 1 : 0) - (input.current.left ? 1 : 0),
         (input.current.up ? 1 : 0) - (input.current.down ? 1 : 0),
-        // Q/E: real forward/back piloting, not just an X/Y plane. Forward
+        // Z/C: real forward/back piloting, not just an X/Y plane. Forward
         // (-Z) is toward the wave.
         (input.current.backward ? 1 : 0) - (input.current.forward ? 1 : 0),
       );
@@ -332,7 +332,7 @@ export function Scene() {
       // perspective makes eyeballing "what am I even under" from the ship's
       // screen position alone unreliable — this draws the real answer.
       if (aimLineRef.current) {
-        // Spans from the ship's own (now movable, Q/E) z down past the
+        // Spans from the ship's own (now movable, Z/C) z down past the
         // formation's furthest possible start — recomputed every frame
         // since the ship's z is no longer fixed.
         const farZ = FORMATION.startZ - 10;
@@ -455,7 +455,7 @@ export function Scene() {
         if (!mesh) continue;
         mesh.position.z += enemyBolts.current.dir * enemyBolts.current.speed * delta;
 
-        // Tracks the ship's current z (it now moves fore/aft via Q/E), not
+        // Tracks the ship's current z (it now moves fore/aft via Z/C), not
         // the fixed spawn constant — otherwise this cull point drifts out of
         // sync with wherever the ship actually is.
         if (mesh.position.z > ship.position.z + 6) {

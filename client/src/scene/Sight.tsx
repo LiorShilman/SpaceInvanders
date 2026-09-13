@@ -4,7 +4,7 @@ import { COLORS } from "../config/constants";
 
 // The geometry's own baked-in length — Scene rescales (scale.y) and
 // repositions this every frame to span from the ship's current z (now
-// movable via Q/E) down past the formation's furthest start.
+// movable via Z/C) down past the formation's furthest start.
 export const AIM_LINE_LENGTH = 50;
 
 /**

@@ -20,9 +20,11 @@ const KEY_MAP: Record<string, keyof InputState> = {
   ArrowDown: "down",
   KeyS: "down",
   // Real Z-axis piloting, not just an X/Y plane — a separate pair of keys
-  // since up/down (Y) is already spoken for aiming at different rows.
-  KeyQ: "forward",
-  KeyE: "backward",
+  // since up/down (Y) is already spoken for aiming at different rows. Z/C
+  // sit right below A/S/D, closer to the WASD cluster than Q/E are (and Q/E
+  // read as an awkward reach on a Hebrew keyboard's physical layout).
+  KeyZ: "forward",
+  KeyC: "backward",
   Space: "fire",
 };
 

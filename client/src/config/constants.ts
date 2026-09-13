@@ -35,7 +35,7 @@ export const ARENA = {
   minY: 0.5,
   maxY: 9.9,
   shipZ: 8, // default spawn depth
-  // Real forward/back piloting range (Q/E), not just an X/Y plane. Closer
+  // Real forward/back piloting range (Z/C), not just an X/Y plane. Closer
   // (toward minZ) shortens bolt travel time — easier to lead the swaying
   // formation — at the cost of less reaction time to incoming fire; minZ
   // stays a little above the shields (z=3) and the invade line (z=5) so

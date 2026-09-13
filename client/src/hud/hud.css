@@ -130,14 +130,20 @@
 
 .hud-controls {
   position: absolute;
-  bottom: 18px;
+  bottom: 48px;
   left: 0;
   right: 0;
   display: flex;
   justify-content: center;
 }
 
-.hud-controls span {
+/* Scoped to the outer pill only — NOT ".hud-controls span" (which would
+   also catch the inner `dir="ltr"` spans around WASD/Z/C and override their
+   isolation, letting the bidi algorithm reorder those Latin tokens'
+   characters against the surrounding Hebrew — that exact bug is why this is
+   direction: rtl here, matching the rest of the HUD, instead of forcing the
+   whole line to ltr like before). */
+.hud-controls-pill {
   font-family: "Consolas", monospace;
   font-size: 14px;
   color: #a9c2a0;
@@ -146,7 +152,7 @@
   border-radius: 5px;
   padding: 6px 16px;
   text-shadow: 0 0 6px rgba(87, 224, 137, 0.5);
-  direction: ltr;
+  direction: rtl;
 }
 
 .hud-overlay {
