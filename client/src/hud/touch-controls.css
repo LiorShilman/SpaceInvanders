@@ -1,0 +1,109 @@
+.touch-controls {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  /* env(safe-area-inset-*) keeps controls clear of a notch or the
+     home-indicator bar in landscape (see viewport-fit=cover in index.html) —
+     without it, a phone's rounded corner or gesture bar can sit right under
+     a thumb's resting position. */
+  padding: max(18px, env(safe-area-inset-top)) max(24px, env(safe-area-inset-right))
+    max(18px, env(safe-area-inset-bottom)) max(24px, env(safe-area-inset-left));
+}
+
+.touch-joystick-base,
+.touch-dive-btn,
+.touch-fire-btn {
+  pointer-events: all;
+  /* Without this, the browser intercepts a finger drag as page scroll/pull-
+     to-refresh before our own pointermove handler ever sees it. */
+  touch-action: none;
+  -webkit-tap-highlight-color: transparent;
+  user-select: none;
+}
+
+.touch-joystick-base {
+  position: absolute;
+  left: max(24px, env(safe-area-inset-left));
+  bottom: max(18px, env(safe-area-inset-bottom));
+  width: 132px;
+  height: 132px;
+  border-radius: 50%;
+  background: rgba(10, 13, 10, 0.55);
+  border: 1px solid rgba(87, 224, 137, 0.35);
+  box-shadow: 0 0 16px rgba(87, 224, 137, 0.15) inset;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.touch-joystick-knob {
+  width: 56px;
+  height: 56px;
+  border-radius: 50%;
+  background: rgba(87, 224, 137, 0.35);
+  border: 1px solid rgba(87, 224, 137, 0.8);
+  box-shadow: 0 0 12px rgba(87, 224, 137, 0.6);
+  /* transform is set imperatively per-frame-of-drag in TouchControls.tsx —
+     transitioning it here would lag a fast thumb behind its own finger. */
+}
+
+.touch-dive-buttons {
+  position: absolute;
+  left: max(172px, calc(env(safe-area-inset-left) + 172px));
+  bottom: max(18px, env(safe-area-inset-bottom));
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.touch-dive-btn,
+.touch-fire-btn {
+  font-family: "Consolas", monospace;
+  color: #d9e5d1;
+  background: rgba(10, 13, 10, 0.6);
+  border: 1px solid rgba(87, 224, 137, 0.4);
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.touch-dive-btn {
+  width: 56px;
+  height: 56px;
+  font-size: 20px;
+}
+
+.touch-dive-btn:active {
+  background: rgba(87, 224, 137, 0.3);
+  border-color: #57e089;
+}
+
+.touch-fire-btn {
+  position: absolute;
+  right: max(28px, env(safe-area-inset-right));
+  bottom: max(24px, env(safe-area-inset-bottom));
+  width: 96px;
+  height: 96px;
+  font-size: 16px;
+  letter-spacing: 0.04em;
+  background: rgba(255, 46, 99, 0.12);
+  border-color: rgba(255, 46, 99, 0.5);
+  color: #ffd7de;
+}
+
+.touch-fire-btn:active {
+  background: rgba(255, 46, 99, 0.35);
+  border-color: #ff2e63;
+  box-shadow: 0 0 20px rgba(255, 46, 99, 0.5);
+}
+
+/* Touch controls only ever render on a touch-capable device (see App.tsx) —
+   but as a second line of defense, hide them outside a landscape-ish, phone
+   -width viewport so they can't linger over a desktop window if that
+   detection is ever wrong. */
+@media (min-width: 900px) {
+  .touch-controls {
+    display: none;
+  }
+}

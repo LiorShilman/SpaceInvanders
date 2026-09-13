@@ -2,7 +2,15 @@
 <html lang="he" dir="rtl">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <!-- viewport-fit=cover + safe-area padding (see App.tsx/touch-controls.css)
+         let the game draw under a phone's notch/home-indicator in landscape
+         instead of leaving unused letterboxed bars there. user-scalable=no +
+         maximum-scale=1 stop an accidental pinch-zoom or double-tap-zoom
+         from breaking the fixed full-screen game layout during play. -->
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover"
+    />
     <title>Invaders: Nexus</title>
   </head>
   <body>

@@ -54,6 +54,17 @@
   white-space: nowrap;
 }
 
+/* The wave number used to be buried as a small label prefix ("גל 3") next
+   to the real, prominent stat (enemies remaining) — easy to miss entirely
+   during play, found out only from the game-over screen. Given its own
+   full-size stat slot now (see HUD.tsx), plus a size bump and a stronger
+   glow on top of that: which wave you're on is exactly the kind of number
+   worth a glance being enough to catch, same as score. */
+.hud-value--wave {
+  font-size: 22px;
+  text-shadow: 0 0 12px rgba(87, 224, 137, 0.85);
+}
+
 .hud-lives {
   display: flex;
   align-items: center;

@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react";
+import { useRef, useEffect } from "react";
 import { unlockAudio } from "../audio/sound";
 
 export interface InputState {
@@ -9,6 +9,31 @@ export interface InputState {
   forward: boolean;
   backward: boolean;
   fire: boolean;
+}
+
+// A single module-level object, not a per-hook useRef — there's only ever
+// one ship/one set of controls in this game, and TouchControls.tsx (a
+// plain HTML overlay, not a descendant of Scene.tsx) needs to write into
+// the exact same object useInput() hands the render loop. A ref returned
+// from a hook can't be reached from a sibling component without prop-
+// drilling or context; a shared module singleton can, matching this
+// codebase's existing appetite for module-level mutable state (e.g.
+// Scene.tsx's _shieldDummy).
+const inputState: InputState = {
+  left: false,
+  right: false,
+  up: false,
+  down: false,
+  forward: false,
+  backward: false,
+  fire: false,
+};
+
+/** Touch controls (and anything else outside the keyboard/mouse listeners
+ * below) set input this way, instead of reaching into the object directly —
+ * keeps this file the one place that knows the shape of InputState. */
+export function setInputKey(key: keyof InputState, value: boolean) {
+  inputState[key] = value;
 }
 
 const KEY_MAP: Record<string, keyof InputState> = {
@@ -30,21 +55,15 @@ const KEY_MAP: Record<string, keyof InputState> = {
 };
 
 /**
- * Tracks pressed keys AND the left mouse button in a mutable ref so the
- * render loop (useFrame) can read input every frame without triggering
- * React re-renders on every keystroke/click. (Formerly useKeyboard — renamed
- * once mouse fire was added, since "keyboard" stopped being accurate.)
+ * Tracks pressed keys AND the left mouse button in a mutable, shared object
+ * so the render loop (useFrame) can read input every frame without
+ * triggering React re-renders on every keystroke/click. (Formerly
+ * useKeyboard — renamed once mouse fire was added, since "keyboard" stopped
+ * being accurate; the object also now doubles as TouchControls' target —
+ * see setInputKey above.)
  */
 export function useInput(): React.RefObject<InputState> {
-  const state = useRef<InputState>({
-    left: false,
-    right: false,
-    up: false,
-    down: false,
-    forward: false,
-    backward: false,
-    fire: false,
-  });
+  const state = useRef<InputState>(inputState);
 
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {

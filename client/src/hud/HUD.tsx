@@ -7,6 +7,9 @@ import "./hud.css";
 interface HUDProps {
   anaglyph: boolean;
   onToggleAnaglyph: () => void;
+  showFullscreenButton?: boolean;
+  onEnterFullscreen?: () => void;
+  showKeyboardHint?: boolean;
 }
 
 function formatClock(ms: number): string {
@@ -21,7 +24,13 @@ const WEAPON_NAMES: Record<string, string> = {
   rapid: "אש מהירה",
 };
 
-export function HUD({ anaglyph, onToggleAnaglyph }: HUDProps) {
+export function HUD({
+  anaglyph,
+  onToggleAnaglyph,
+  showFullscreenButton,
+  onEnterFullscreen,
+  showKeyboardHint = true,
+}: HUDProps) {
   const {
     status,
     health,
@@ -111,8 +120,12 @@ export function HUD({ anaglyph, onToggleAnaglyph }: HUDProps) {
           </span>
         </div>
         <div className="hud-stat hud-stat--num">
-          <span className="hud-label">גל {wave}</span>
-          <span className="hud-value">{enemiesRemaining} נותרו</span>
+          <span className="hud-label">גל</span>
+          <span className="hud-value hud-value--wave">{wave}</span>
+        </div>
+        <div className="hud-stat hud-stat--num">
+          <span className="hud-label">נותרו</span>
+          <span className="hud-value">{enemiesRemaining}</span>
         </div>
         <div className="hud-stat hud-stat--num">
           <span className="hud-label">זמן</span>
@@ -132,6 +145,11 @@ export function HUD({ anaglyph, onToggleAnaglyph }: HUDProps) {
         <button className="anaglyph-toggle" onClick={onToggleAnaglyph} data-active={anaglyph}>
           🔴🔵 {anaglyph ? "תלת-ממד פעיל — כיבוי" : "משקפי אדום-כחול (3)"}
         </button>
+        {showFullscreenButton && (
+          <button className="anaglyph-toggle" onClick={onEnterFullscreen}>
+            ⛶ מסך מלא
+          </button>
+        )}
       </div>
 
       {bannerText && (
@@ -152,12 +170,14 @@ export function HUD({ anaglyph, onToggleAnaglyph }: HUDProps) {
         </div>
       )}
 
-      <div className="hud-controls">
-        <span className="hud-controls-pill">
-          <span dir="ltr">WASD</span> / חצים — תנועה &nbsp;·&nbsp; <span dir="ltr">Z/C</span> — קדימה/אחורה
-          &nbsp;·&nbsp; רווח / עכבר שמאלי — ירי
-        </span>
-      </div>
+      {showKeyboardHint && (
+        <div className="hud-controls">
+          <span className="hud-controls-pill">
+            <span dir="ltr">WASD</span> / חצים — תנועה &nbsp;·&nbsp; <span dir="ltr">Z/C</span> — קדימה/אחורה
+            &nbsp;·&nbsp; רווח / עכבר שמאלי — ירי
+          </span>
+        </div>
+      )}
     </div>
   );
 }
