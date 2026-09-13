@@ -552,6 +552,7 @@ export function Scene() {
           pickupsRef: pickups.current,
           playerBoltsRef: playerBolts.current,
           enemyBoltsRef: enemyBolts.current,
+          columnNextFireArr: columnNextFire.current,
           shieldLayoutRef: shieldLayout,
           shieldAliveArr: shieldAlive.current,
           shieldMeshRef: shieldMeshRef.current,
@@ -635,6 +636,18 @@ export function Scene() {
           ship.rotation.set(0, 0, 0);
           formation.position.set(0, 0, FORMATION.startZ);
           simTime.current = 0;
+          // columnNextFire values are scheduled as simTime.current + some
+          // offset — left untouched, they'd still hold whatever (much
+          // larger) simTime they were scheduled against before the reset
+          // above, so every column would wait for simTime to climb all the
+          // way back up past its stale number before firing again. Enemies
+          // would look like they'd simply stopped shooting, for as long as
+          // that takes (potentially minutes). Reschedule fresh, exactly
+          // like spawnWave does for a brand new wave.
+          const { fireMin, fireMax } = currentDifficulty.current;
+          for (let col = 0; col < FORMATION.cols; col++) {
+            columnNextFire.current[col] = fireMin + Math.random() * (fireMax - fireMin);
+          }
         }
       }
 
