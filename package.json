@@ -1,0 +1,13 @@
+{
+  "name": "nexus-invaders",
+  "private": true,
+  "description": "Space Invaders: Nexus - a 3D, multiplayer reimagining of the arcade classic",
+  "workspaces": [
+    "client",
+    "server"
+  ],
+  "scripts": {
+    "dev": "npm run dev --workspace client",
+    "build": "npm run build --workspace client"
+  }
+}

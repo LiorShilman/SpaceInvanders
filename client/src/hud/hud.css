@@ -1,0 +1,122 @@
+.hud {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  font-family: "Segoe UI", Arial, sans-serif;
+  color: #d9e5d1;
+}
+
+.hud-bar {
+  position: absolute;
+  top: 18px;
+  left: 18px;
+  right: 18px;
+  display: flex;
+  gap: 28px;
+  align-items: center;
+  direction: rtl;
+}
+
+.hud-stat {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.hud-stat--num {
+  min-width: 90px;
+}
+
+.hud-label {
+  font-size: 11px;
+  letter-spacing: 0.06em;
+  color: #7f8f76;
+  text-shadow: 0 0 6px rgba(0, 0, 0, 0.8);
+}
+
+.hud-value {
+  font-family: "Consolas", monospace;
+  font-size: 18px;
+  color: #57e089;
+  text-shadow: 0 0 8px rgba(87, 224, 137, 0.6);
+}
+
+.health-track {
+  width: 180px;
+  height: 10px;
+  border: 1px solid #2f6b48;
+  background: rgba(10, 13, 10, 0.7);
+  border-radius: 3px;
+  overflow: hidden;
+}
+
+.health-fill {
+  height: 100%;
+  background: #57e089;
+  box-shadow: 0 0 10px rgba(87, 224, 137, 0.7);
+  transition: width 0.15s ease-out;
+}
+
+.health-fill[data-critical="true"] {
+  background: #e2a23f;
+  box-shadow: 0 0 10px rgba(226, 162, 63, 0.8);
+}
+
+.hud-controls {
+  position: absolute;
+  bottom: 16px;
+  left: 0;
+  right: 0;
+  text-align: center;
+  font-family: "Consolas", monospace;
+  font-size: 12px;
+  color: #566150;
+  direction: ltr;
+}
+
+.hud-overlay {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(10, 13, 10, 0.72);
+  pointer-events: all;
+}
+
+.hud-panel {
+  text-align: center;
+  border: 1px solid rgba(87, 224, 137, 0.35);
+  background: #10150e;
+  padding: 32px 44px;
+  border-radius: 10px;
+  direction: rtl;
+}
+
+.hud-panel h1 {
+  margin: 0 0 12px;
+  font-size: 22px;
+  color: #57e089;
+  text-shadow: 0 0 12px rgba(87, 224, 137, 0.6);
+}
+
+.hud-panel p {
+  margin: 0 0 20px;
+  color: #d9e5d1;
+  font-size: 14px;
+}
+
+.hud-panel button {
+  font-family: inherit;
+  font-size: 14px;
+  color: #0a0d0a;
+  background: #57e089;
+  border: none;
+  border-radius: 6px;
+  padding: 10px 24px;
+  cursor: pointer;
+}
+
+.hud-panel button:hover {
+  background: #7cff9e;
+}

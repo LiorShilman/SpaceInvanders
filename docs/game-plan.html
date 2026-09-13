@@ -1,0 +1,653 @@
+<title>Invaders: Nexus</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Heebo:wght@400;500;700;800&family=JetBrains+Mono:wght@400;500;700&family=Press+Start+2P&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --bg:#0a0d0a;
+    --surface:#10150e;
+    --surface-2:#161e14;
+    --border:#25301f;
+    --border-soft:#1a2216;
+    --text:#d9e5d1;
+    --text-dim:#7f8f76;
+    --text-faint:#566150;
+    --accent:#57e089;
+    --accent-soft:rgba(87,224,137,0.12);
+    --accent-line:rgba(87,224,137,0.35);
+    --amber:#e2a23f;
+    --amber-soft:rgba(226,162,63,0.12);
+  }
+
+  *{box-sizing:border-box;}
+  body{
+    background:var(--bg);
+    color:var(--text);
+    font-family:"Heebo","Segoe UI",Arial,sans-serif;
+    line-height:1.75;
+    -webkit-font-smoothing:antialiased;
+  }
+
+  .page{
+    direction:rtl;
+    max-width:920px;
+    margin:0 auto;
+    padding-inline:20px;
+    padding-block:56px 96px;
+    position:relative;
+    background-image:
+      repeating-linear-gradient(180deg, rgba(255,255,255,0.012) 0px, rgba(255,255,255,0.012) 1px, transparent 1px, transparent 3px);
+  }
+
+  ::selection{ background:var(--accent-soft); color:var(--accent); }
+
+  .mono{ font-family:"JetBrains Mono", ui-monospace, monospace; }
+  [dir="ltr"]{ unicode-bidi:isolate; }
+
+  a{ color:var(--accent); }
+
+  h1,h2,h3{ text-wrap:balance; font-weight:700; color:var(--text); }
+
+  /* ---------- Hero ---------- */
+  .hero{
+    padding-block:8px 40px;
+    border-bottom:1px solid var(--border-soft);
+    margin-bottom:44px;
+  }
+  .eyebrow{
+    font-family:"JetBrains Mono",monospace;
+    font-size:11px;
+    letter-spacing:.12em;
+    color:var(--text-faint);
+    direction:ltr;
+    text-align:right;
+    margin:0 0 18px;
+  }
+  .wordmark{
+    font-family:"Press Start 2P", "JetBrains Mono", monospace;
+    direction:ltr;
+    text-align:right;
+    font-size:clamp(20px,4vw,32px);
+    line-height:1.6;
+    color:var(--accent);
+    text-shadow:0 0 18px var(--accent-line);
+    margin:0 0 22px;
+    text-wrap:balance;
+  }
+  .hero h1{
+    font-size:clamp(24px,4.2vw,34px);
+    margin:0 0 14px;
+  }
+  .hero p.lede{
+    font-size:17px;
+    color:var(--text-dim);
+    max-width:62ch;
+    margin:0 0 26px;
+  }
+  .meta-row{
+    display:flex;
+    flex-wrap:wrap;
+    gap:10px;
+  }
+  .meta-chip{
+    font-family:"JetBrains Mono",monospace;
+    font-size:12px;
+    color:var(--text-dim);
+    border:1px solid var(--border);
+    background:var(--surface);
+    border-radius:4px;
+    padding:6px 12px;
+    display:flex;
+    gap:8px;
+    align-items:center;
+  }
+  .meta-chip b{ color:var(--accent); font-weight:500; }
+
+  /* ---------- Section scaffolding ---------- */
+  section{ margin-bottom:64px; }
+  .section-head{
+    display:flex;
+    align-items:baseline;
+    gap:12px;
+    margin-bottom:22px;
+  }
+  .section-num{
+    font-family:"JetBrains Mono",monospace;
+    color:var(--text-faint);
+    font-size:13px;
+    direction:ltr;
+  }
+  section h2{ font-size:22px; margin:0; }
+  section > p{ color:var(--text-dim); max-width:68ch; }
+
+  /* ---------- Pillars ---------- */
+  .pillars{
+    display:grid;
+    grid-template-columns:repeat(auto-fit,minmax(190px,1fr));
+    gap:1px;
+    background:var(--border);
+    border:1px solid var(--border);
+    border-radius:8px;
+    overflow:hidden;
+  }
+  .pillar{
+    background:var(--surface);
+    padding:20px 18px;
+  }
+  .pillar .glyph{
+    color:var(--accent);
+    font-family:"JetBrains Mono",monospace;
+    font-size:12px;
+    direction:ltr;
+    margin-bottom:10px;
+    opacity:.8;
+  }
+  .pillar h3{ font-size:15px; margin:0 0 8px; }
+  .pillar p{ font-size:13.5px; color:var(--text-dim); margin:0; }
+
+  /* ---------- Enemy behavior list ---------- */
+  .behavior-list{
+    list-style:none;
+    margin:20px 0 0;
+    padding:0;
+    display:flex;
+    flex-direction:column;
+    gap:1px;
+    background:var(--border-soft);
+    border:1px solid var(--border-soft);
+    border-radius:8px;
+    overflow:hidden;
+  }
+  .behavior-list li{
+    background:var(--surface);
+    padding:14px 18px;
+    display:grid;
+    grid-template-columns:150px 1fr;
+    gap:16px;
+    align-items:baseline;
+  }
+  .behavior-list b{
+    color:var(--accent);
+    font-size:14px;
+    font-weight:500;
+  }
+  .behavior-list span{ color:var(--text-dim); font-size:14px; }
+  @media (max-width:520px){
+    .behavior-list li{ grid-template-columns:1fr; gap:4px; }
+  }
+
+  /* ---------- Modes ---------- */
+  .modes{
+    display:grid;
+    grid-template-columns:1fr 1fr;
+    gap:16px;
+  }
+  @media (max-width:640px){ .modes{ grid-template-columns:1fr; } }
+  .mode-card{
+    border:1px solid var(--border);
+    background:var(--surface);
+    border-radius:8px;
+    padding:22px;
+    position:relative;
+  }
+  .mode-card .phase-tag{
+    font-family:"JetBrains Mono",monospace;
+    font-size:11px;
+    direction:ltr;
+    display:inline-block;
+    padding:3px 8px;
+    border-radius:4px;
+    margin-bottom:14px;
+  }
+  .phase-tag.now{ background:var(--accent-soft); color:var(--accent); }
+  .phase-tag.next{ background:var(--amber-soft); color:var(--amber); }
+  .mode-card h3{ font-size:17px; margin:0 0 10px; }
+  .mode-card p{ font-size:14px; color:var(--text-dim); margin:0; }
+
+  /* ---------- Diagram ---------- */
+  .diagram-wrap{
+    border:1px solid var(--border);
+    background:var(--surface);
+    border-radius:8px;
+    padding:18px;
+    overflow-x:auto;
+  }
+  .diagram-wrap svg{ display:block; min-width:640px; width:100%; height:auto; }
+
+  /* ---------- Tech table ---------- */
+  .table-wrap{ overflow-x:auto; border:1px solid var(--border); border-radius:8px; }
+  table{ width:100%; border-collapse:collapse; min-width:560px; direction:rtl; }
+  thead th{
+    text-align:right;
+    font-size:12px;
+    font-family:"JetBrains Mono",monospace;
+    color:var(--text-faint);
+    font-weight:500;
+    padding:12px 16px;
+    background:var(--surface-2);
+    border-bottom:1px solid var(--border);
+  }
+  tbody td{
+    padding:13px 16px;
+    font-size:14px;
+    color:var(--text-dim);
+    border-bottom:1px solid var(--border-soft);
+    vertical-align:top;
+  }
+  tbody tr:last-child td{ border-bottom:none; }
+  tbody td:first-child{ color:var(--text); font-weight:500; direction:ltr; text-align:right; font-family:"JetBrains Mono",monospace; font-size:13px; }
+  tbody tr:nth-child(odd){ background:var(--surface); }
+  tbody tr:nth-child(even){ background:var(--surface-2); }
+
+  /* ---------- Palette swatches ---------- */
+  .swatches{ display:flex; gap:12px; flex-wrap:wrap; margin:20px 0 28px; }
+  .swatch{
+    width:120px;
+    border:1px solid var(--border);
+    border-radius:8px;
+    overflow:hidden;
+    background:var(--surface);
+  }
+  .swatch .chip{ height:56px; }
+  .swatch .label{ padding:9px 10px; }
+  .swatch .label b{ display:block; font-size:12px; color:var(--text); }
+  .swatch .label span{ display:block; font-family:"JetBrains Mono",monospace; font-size:11px; color:var(--text-faint); direction:ltr; text-align:left; }
+
+  /* ---------- Roadmap timeline ---------- */
+  .roadmap{ position:relative; padding-inline-start:0; }
+  .phase{
+    display:grid;
+    grid-template-columns:56px 1fr;
+    gap:18px;
+    position:relative;
+    padding-bottom:34px;
+  }
+  .phase:last-child{ padding-bottom:0; }
+  .phase-rail{
+    display:flex;
+    flex-direction:column;
+    align-items:center;
+  }
+  .phase-dot{
+    width:34px; height:34px;
+    border-radius:50%;
+    border:1px solid var(--accent-line);
+    background:var(--surface);
+    color:var(--accent);
+    font-family:"JetBrains Mono",monospace;
+    font-size:13px;
+    display:flex; align-items:center; justify-content:center;
+    flex-shrink:0;
+  }
+  .phase-line{
+    width:1px;
+    flex:1;
+    background:var(--border);
+    margin-top:6px;
+  }
+  .phase-body{ padding-top:3px; }
+  .phase-body .status{
+    font-family:"JetBrains Mono",monospace;
+    font-size:11px;
+    color:var(--text-faint);
+    direction:ltr;
+    text-align:right;
+    margin-bottom:6px;
+    display:block;
+  }
+  .phase-body h3{ font-size:16.5px; margin:0 0 8px; }
+  .phase-body p{ font-size:14px; color:var(--text-dim); margin:0 0 10px; max-width:64ch; }
+  .phase-body ul{ margin:0; padding-inline-start:18px; color:var(--text-dim); font-size:13.5px; display:flex; flex-direction:column; gap:4px; }
+
+  /* ---------- Code block ---------- */
+  pre.code{
+    direction:ltr;
+    text-align:left;
+    font-family:"JetBrains Mono",monospace;
+    font-size:12.5px;
+    line-height:1.7;
+    color:var(--text-dim);
+    background:var(--surface);
+    border:1px solid var(--border);
+    border-radius:8px;
+    padding:18px 20px;
+    overflow-x:auto;
+    margin:0;
+  }
+  pre.code .dir{ color:var(--accent); }
+  pre.code .cm{ color:var(--text-faint); }
+
+  /* ---------- CTA ---------- */
+  .cta{
+    border:1px solid var(--accent-line);
+    background:linear-gradient(180deg, var(--accent-soft), transparent 60%);
+    border-radius:10px;
+    padding:28px 26px;
+  }
+  .cta h2{ font-size:19px; margin:0 0 10px; }
+  .cta p{ color:var(--text-dim); margin:0 0 16px; max-width:64ch; }
+  .cta ol{ margin:0; padding-inline-start:20px; color:var(--text); font-size:14.5px; display:flex; flex-direction:column; gap:6px; }
+
+  footer{
+    margin-top:60px;
+    padding-top:22px;
+    border-top:1px solid var(--border-soft);
+    font-family:"JetBrains Mono",monospace;
+    font-size:11.5px;
+    color:var(--text-faint);
+    direction:ltr;
+    text-align:right;
+  }
+
+  @media (prefers-reduced-motion:no-preference){
+    .wordmark{ animation:flicker 6s ease-in-out infinite; }
+  }
+  @keyframes flicker{
+    0%,92%,100%{ opacity:1; }
+    93%{ opacity:.85; }
+    94%{ opacity:1; }
+    95%{ opacity:.9; }
+    96%{ opacity:1; }
+  }
+</style>
+
+<div class="page" dir="rtl" lang="he">
+
+  <header class="hero">
+    <p class="eyebrow mono">GAME DESIGN &amp; TECHNICAL PLAN — v0.1</p>
+    <div class="wordmark">SPACE INVADERS: NEXUS</div>
+    <h1>תוכנית פיתוח: פולשים בתלת־ממד, בדפדפן, במולטיפלייר</h1>
+    <p class="lede">שכתוב מלא של הקלאסיקה מ־1978: נחיל חייזרים שנע במרחב תלת־ממדי אמיתי סביב הספינה שלך, רץ ישירות בדפדפן, ונבנה בהדרגה משיתוף פעולה להתגוששות בין שני צדדים.</p>
+    <div class="meta-row">
+      <span class="meta-chip">פלטפורמה: <b>Web · Three.js</b></span>
+      <span class="meta-chip">היקף: <b>הפקה מלאה</b></span>
+      <span class="meta-chip">מולטיפלייר: <b>Co-op ← PvP</b></span>
+      <span class="meta-chip">השראה: <b>מסך פוספור ירוק, 1978</b></span>
+    </div>
+  </header>
+
+  <section id="pillars">
+    <div class="section-head">
+      <h2>עמודי התווך של המשחק</h2>
+    </div>
+    <p>ארבעה עקרונות שכל החלטת עיצוב או קוד נמדדת מולם.</p>
+    <div class="pillars">
+      <div class="pillar">
+        <div class="glyph">01</div>
+        <h3>עומק תלת־ממדי אמיתי</h3>
+        <p>לא שורות שטוחות שיורדות — נחיל שנע בנפח: חלק מקיף במעגלים, חלק צולל, חלק תוקף מהאגפים.</p>
+      </div>
+      <div class="pillar">
+        <div class="glyph">02</div>
+        <h3>מולטיפלייר הדרגתי</h3>
+        <p>מתחילים בהישרדות משותפת, ורק כשהליבה מוכיחה את עצמה — עוברים למצב תחרותי א־סימטרי.</p>
+      </div>
+      <div class="pillar">
+        <div class="glyph">03</div>
+        <h3>שפה חזותית אחת, נאמנה למקור</h3>
+        <p>פוספור ירוק על שחור, לא סינת'ווייב גנרי — הגרפיקה החדשה מכבדת את ה־CRT המקורי.</p>
+      </div>
+      <div class="pillar">
+        <div class="glyph">04</div>
+        <h3>אפס חיכוך בכניסה</h3>
+        <p>לינק אחד בדפדפן, בלי התקנה — כל מה שמעכב שחקן שני מלהצטרף הוא בעיה שצריך לפתור.</p>
+      </div>
+    </div>
+  </section>
+
+  <section id="loop">
+    <div class="section-head">
+      <span class="section-num">§1</span>
+      <h2>לולאת המשחק הליבה</h2>
+    </div>
+    <p>הזירה היא כיפה חצי־פתוחה: השחקן נע על המישור התחתון (קדימה/אחורה/הצידה + strafe קל), הנחיל תופס את הנפח שמעל. כל טיפוס אויב מתנהג אחרת במרחב:</p>
+    <ul class="behavior-list">
+      <li><b>Grunt (זוטר)</b><span>נע בפורמציה מעגלית, יורה קווי לייזר בודדים כלפי מטה — עמוד השדרה של כל גל.</span></li>
+      <li><b>Diver (צוללן)</b><span>יוצא מהפורמציה וצולל ישירות לעבר הספינה במסלול עקום — מחייב תגובת strafe.</span></li>
+      <li><b>Flanker (מקיף)</b><span>נע בקשת רחבה מהצדדים, תוקף מזווית שמחוץ לשדה הראייה הקדמי.</span></li>
+      <li><b>Bulwark (בוס־מיני)</b><span>מגן אנרגיה מגזרי שנשבר רק מכיוון מסוים — דורש תיאום ב־Co-op.</span></li>
+    </ul>
+  </section>
+
+  <section id="modes">
+    <div class="section-head">
+      <span class="section-num">§2</span>
+      <h2>מצבי משחק</h2>
+    </div>
+    <p>לפי ההחלטה שלך: מתחילים ב־Co-op, ובונים את ה־PvP כשכבה שנייה מעל אותה תשתית רשת.</p>
+    <div class="modes">
+      <div class="mode-card">
+        <span class="phase-tag now mono">PHASE 1 · NOW</span>
+        <h3>הישרדות משותפת (Co-op)</h3>
+        <p>2–4 שחקנים מגינים יחד על ספינת־אם אחת מול גלים מסלימים. טעינה מחדש משותפת של תותחי הגנה, "revive" הדדי, ובוסים שדורשים תיאום אש. זה גם הבניין הבסיסי שמוכיח את סנכרון הרשת.</p>
+      </div>
+      <div class="mode-card">
+        <span class="phase-tag next mono">PHASE 3 · NEXT</span>
+        <h3>עימות א־סימטרי (PvP)</h3>
+        <p>צד אחד שולט על "מפקד הפולשים" — בונה נחילים, שולח בוסים, מנהל משאבים. הצד השני מגן בזמן אמת. הופך את תפקידי המשחק ההיסטוריים למשחק אסטרטגי דו־כיווני.</p>
+      </div>
+    </div>
+  </section>
+
+  <section id="architecture">
+    <div class="section-head">
+      <span class="section-num">§3</span>
+      <h2>ארכיטקטורה טכנית</h2>
+    </div>
+    <p>שרת סמכותי (authoritative) קובע את מצב המשחק; כל לקוח רק מרנדר ושולח קלט. כך גם Co-op וגם PvP חולקים את אותה תשתית חדרים.</p>
+    <div class="diagram-wrap">
+      <svg viewBox="0 0 860 300" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="דיאגרמת ארכיטקטורה: לקוחות מתחברים בזמן אמת דרך WebSocket לשרת Colyseus, שמנהל חדרי Co-op ו-PvP">
+        <defs>
+          <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+            <path d="M0,0 L10,5 L0,10 z" fill="var(--text-faint)"></path>
+          </marker>
+        </defs>
+
+        <!-- clients -->
+        <g font-family="JetBrains Mono, monospace" font-size="12">
+          <rect x="20" y="30" width="150" height="46" rx="6" fill="var(--surface-2)" stroke="var(--border)"></rect>
+          <text x="95" y="58" fill="var(--text)" text-anchor="middle">Client A · Three.js</text>
+
+          <rect x="20" y="90" width="150" height="46" rx="6" fill="var(--surface-2)" stroke="var(--border)"></rect>
+          <text x="95" y="118" fill="var(--text)" text-anchor="middle">Client B · Three.js</text>
+
+          <rect x="20" y="150" width="150" height="46" rx="6" fill="var(--surface-2)" stroke="var(--border)"></rect>
+          <text x="95" y="178" fill="var(--text)" text-anchor="middle">Client N · Three.js</text>
+
+          <!-- lines to server -->
+          <line x1="170" y1="53" x2="330" y2="120" stroke="var(--border)" marker-end="url(#arrow)"></line>
+          <line x1="170" y1="113" x2="330" y2="120" stroke="var(--border)" marker-end="url(#arrow)"></line>
+          <line x1="170" y1="173" x2="330" y2="120" stroke="var(--border)" marker-end="url(#arrow)"></line>
+          <text x="250" y="100" fill="var(--text-faint)" text-anchor="middle">WebSocket</text>
+
+          <!-- server -->
+          <rect x="335" y="70" width="190" height="100" rx="8" fill="var(--accent-soft)" stroke="var(--accent-line)"></rect>
+          <text x="430" y="112" fill="var(--accent)" text-anchor="middle" font-size="13">Colyseus Server</text>
+          <text x="430" y="132" fill="var(--text-dim)" text-anchor="middle" font-size="11">state · tick 20-30hz</text>
+          <text x="430" y="150" fill="var(--text-dim)" text-anchor="middle" font-size="11">authoritative</text>
+
+          <!-- to rooms -->
+          <line x1="525" y1="100" x2="650" y2="55" stroke="var(--border)" marker-end="url(#arrow)"></line>
+          <line x1="525" y1="140" x2="650" y2="185" stroke="var(--border)" marker-end="url(#arrow)"></line>
+
+          <rect x="655" y="30" width="180" height="50" rx="6" fill="var(--surface-2)" stroke="var(--border)"></rect>
+          <text x="745" y="60" fill="var(--text)" text-anchor="middle">Room: co-op-survival</text>
+
+          <rect x="655" y="160" width="180" height="50" rx="6" fill="var(--surface-2)" stroke="var(--border)"></rect>
+          <text x="745" y="190" fill="var(--text)" text-anchor="middle">Room: pvp-asymmetric</text>
+        </g>
+
+        <text x="20" y="250" fill="var(--text-faint)" font-family="JetBrains Mono, monospace" font-size="11">
+          state sync: delta-compressed snapshots · client-side prediction + reconciliation on the player ship
+        </text>
+      </svg>
+    </div>
+  </section>
+
+  <section id="stack">
+    <div class="section-head">
+      <span class="section-num">§4</span>
+      <h2>מחסנית טכנולוגית</h2>
+    </div>
+    <p>כל הבחירות מותאמות ליעד שקבעת: דפדפן, ללא התקנה, בקנה מידה מלא.</p>
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr><th>שכבה</th><th>בחירה</th><th>תפקיד</th></tr>
+        </thead>
+        <tbody>
+          <tr><td>Rendering</td><td>Three.js + React Three Fiber</td><td>סצנה תלת־ממדית, תאורה, פוסט־פרוססינג (bloom לפוספור)</td></tr>
+          <tr><td>Build</td><td>Vite</td><td>שרת פיתוח מהיר, בנייה לדפדפן</td></tr>
+          <tr><td>Networking</td><td>Colyseus</td><td>ניהול חדרים, סנכרון מצב authoritative, matchmaking בסיסי</td></tr>
+          <tr><td>Physics</td><td>Rapier (WASM)</td><td>קולייז'נים לפגזים/אויבים בביצועים גבוהים</td></tr>
+          <tr><td>State (client)</td><td>Zustand</td><td>מצב UI/HUD מקומי, נפרד ממצב הרשת</td></tr>
+          <tr><td>Audio</td><td>Howler.js</td><td>אפקטים מרחביים, מוזיקת רקע דינמית לפי עוצמת הגל</td></tr>
+          <tr><td>Deploy</td><td>Node + PM2 (שרת הבית)</td><td>שרת ה־Colyseus רץ באופן קבוע; קליינט מוגש כ־static build</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <section id="visual">
+    <div class="section-head">
+      <span class="section-num">§5</span>
+      <h2>שפה חזותית: פוספור, לא סינת'ווייב</h2>
+    </div>
+    <p>ההשראה היא מסך ה־CRT הירוק המונוכרומטי של הארקייד המקורי מ־1978 — לא הצבעוניות הוורודה-סגולה שכל "רימייק רטרו" קופץ אליה כברירת מחדל. ירוק אחד, שחור עמוק, וזוהר עדין שמדמה burn-in של פוספור אמיתי.</p>
+    <div class="swatches">
+      <div class="swatch">
+        <div class="chip" style="background:#0a0d0a;"></div>
+        <div class="label"><b>רקע עמוק</b><span>#0A0D0A</span></div>
+      </div>
+      <div class="swatch">
+        <div class="chip" style="background:#10150e;"></div>
+        <div class="label"><b>משטח HUD</b><span>#10150E</span></div>
+      </div>
+      <div class="swatch">
+        <div class="chip" style="background:#57e089;"></div>
+        <div class="label"><b>פוספור (accent)</b><span>#57E089</span></div>
+      </div>
+      <div class="swatch">
+        <div class="chip" style="background:#e2a23f;"></div>
+        <div class="label"><b>אזהרה/בוס</b><span>#E2A23F</span></div>
+      </div>
+      <div class="swatch">
+        <div class="chip" style="background:#d9e5d1;"></div>
+        <div class="label"><b>טקסט ראשי</b><span>#D9E5D1</span></div>
+      </div>
+    </div>
+    <p style="margin-top:-8px;">אפקטים: bloom עדין על כל דבר זוהר, scanlines דקים על כל הזירה, chromatic aberration קל בפגיעה, ופיצוצי חלקיקים (GPU particles) שמתפרקים לפיקסלים מרובעים כמחווה לרזולוציה המקורית.</p>
+  </section>
+
+  <section id="roadmap">
+    <div class="section-head">
+      <span class="section-num">§6</span>
+      <h2>מפת דרכים</h2>
+    </div>
+    <p>חמישה שלבים רציפים — כל שלב מוסיף שכבה על הקודם, אף פעם לא בונה מחדש.</p>
+    <div class="roadmap">
+      <div class="phase">
+        <div class="phase-rail"><div class="phase-dot">0</div><div class="phase-line"></div></div>
+        <div class="phase-body">
+          <span class="status mono">FOUNDATION</span>
+          <h3>יסודות ולולאת סינגלפלייר</h3>
+          <p>הוכחת היתכנות: תחושת שליטה, תחושת אויב, תחושת פגיעה — בלי רשת בכלל.</p>
+          <ul>
+            <li>שלד פרויקט (client + server monorepo), Vite + Three.js</li>
+            <li>תנועת ספינה, ירי, פגיעה, גל אויבים בודד</li>
+            <li>HUD בסיסי, מד חיים, ניקוד</li>
+          </ul>
+        </div>
+      </div>
+      <div class="phase">
+        <div class="phase-rail"><div class="phase-dot">1</div><div class="phase-line"></div></div>
+        <div class="phase-body">
+          <span class="status mono">CO-OP NETWORK</span>
+          <h3>מולטיפלייר שיתופי</h3>
+          <p>שרת Colyseus ראשון, 2–4 שחקנים בזירה אחת, מנגנון revive.</p>
+          <ul>
+            <li>חדר co-op-survival, סנכרון מצב אויבים ושחקנים</li>
+            <li>client-side prediction לתנועת השחקן שלי</li>
+            <li>ניקוד משותף, מסך "מפולש/הצלה"</li>
+          </ul>
+        </div>
+      </div>
+      <div class="phase">
+        <div class="phase-rail"><div class="phase-dot">2</div><div class="phase-line"></div></div>
+        <div class="phase-body">
+          <span class="status mono">CONTENT &amp; BOSSES</span>
+          <h3>תוכן, בוסים וליטוש חזותי</h3>
+          <p>הופכים את הלולאה הבסיסית למשחק שרוצים לשחק בו שוב.</p>
+          <ul>
+            <li>מערכת גלים פרוצדורלית + עורך גלים פנימי</li>
+            <li>בוסי Bulwark, עץ שדרוגי נשק</li>
+            <li>bloom, scanlines, particles, סאונד</li>
+          </ul>
+        </div>
+      </div>
+      <div class="phase">
+        <div class="phase-rail"><div class="phase-dot">3</div><div class="phase-line"></div></div>
+        <div class="phase-body">
+          <span class="status mono">ASYMMETRIC PVP</span>
+          <h3>מצב תחרותי א־סימטרי</h3>
+          <p>שכבה שנייה מעל אותה תשתית רשת — לא ליבה חדשה.</p>
+          <ul>
+            <li>חדר pvp-asymmetric, ממשק "מפקד פולשים"</li>
+            <li>איזון: תקציב משאבים לתוקף מול קצב אש למגנים</li>
+            <li>matchmaking בסיסי, דירוג ELO ראשוני</li>
+          </ul>
+        </div>
+      </div>
+      <div class="phase">
+        <div class="phase-rail"><div class="phase-dot">4</div></div>
+        <div class="phase-body">
+          <span class="status mono">LAUNCH POLISH</span>
+          <h3>ליטוש והפצה</h3>
+          <p>הפיכת הפרויקט לשירות זמין וברשת הבית.</p>
+          <ul>
+            <li>טבלת מובילים, סקינים לספינה, השמעת רשת (spectator)</li>
+            <li>פריסה עם PM2 + IIS על שרת הבית, HTTPS</li>
+            <li>מוניטורינג בסיסי לחדרי המשחק החיים</li>
+          </ul>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section id="folders">
+    <div class="section-head">
+      <span class="section-num">§7</span>
+      <h2>מבנה תיקיות מוצע</h2>
+    </div>
+    <div class="table-wrap" style="overflow-x:auto;">
+      <pre class="code"><span class="dir">nexus-invaders/</span>
+├── <span class="dir">client/</span>              <span class="cm"># Vite + React Three Fiber</span>
+│   ├── src/scene/         <span class="cm"># ships, enemies, waves, VFX</span>
+│   ├── src/net/           <span class="cm"># Colyseus client, prediction</span>
+│   ├── src/hud/
+│   └── src/audio/
+├── <span class="dir">server/</span>              <span class="cm"># Colyseus authoritative server</span>
+│   ├── src/rooms/co-op-survival.ts
+│   ├── src/rooms/pvp-asymmetric.ts
+│   ├── src/sim/           <span class="cm"># shared game-state schema</span>
+│   └── src/waves/         <span class="cm"># procedural wave generator</span>
+├── <span class="dir">shared/</span>              <span class="cm"># types + constants used by both</span>
+└── <span class="dir">docs/</span>                <span class="cm"># GDD, balancing sheets</span></pre>
+    </div>
+  </section>
+
+  <section id="next" class="cta">
+    <h2>הצעד הבא</h2>
+    <p>זו תוכנית-על. כדי לא לבנות "הכול בבת אחת", מומלץ להתחיל ב־Phase 0 כפרויקט קוד אמיתי:</p>
+    <ol>
+      <li>אתחול ריפו (client + server monorepo) והגדרת Vite + Three.js</li>
+      <li>מימוש לולאת הסינגלפלייר: ספינה, ירי, גל אויבים אחד עם תנועה תלת־ממדית</li>
+      <li>רק אחרי שזה "מרגיש טוב" — כניסה ל־Phase 1 והוספת השרת</li>
+    </ol>
+  </section>
+
+  <footer>
+    Invaders: Nexus — game design &amp; technical plan · v0.1
+  </footer>
+
+</div>
