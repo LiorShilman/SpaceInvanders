@@ -50,6 +50,62 @@ function buildFormationLayout(): [number, number, number][] {
   return layout;
 }
 
+/**
+ * Which grid slots actually hold an enemy for a given wave — the layout
+ * positions above are always the same full rows x cols grid, but each wave
+ * cycles through a different silhouette instead of always filling the whole
+ * grid, so wave 2 doesn't look like wave 1 with a fresh coat of paint.
+ * ENEMY_COUNT stays the fixed array/instance size; a mask just leaves some
+ * slots permanently unused for that wave (their column simply never fires
+ * from them — see the enemy-firing loop, already handles empty columns).
+ */
+type WaveShape = (row: number, col: number) => boolean;
+
+const WAVE_SHAPES: WaveShape[] = [
+  // Full block — the classic wave.
+  () => true,
+  // Wedge: a narrow point facing the ship (row 0), flaring out toward the
+  // back rows.
+  (row, col) => {
+    const center = (FORMATION.cols - 1) / 2;
+    const halfWidth = (row / (FORMATION.rows - 1)) * center + 0.6;
+    return Math.abs(col - center) <= halfWidth;
+  },
+  // Diamond.
+  (row, col) => {
+    const centerRow = (FORMATION.rows - 1) / 2;
+    const centerCol = (FORMATION.cols - 1) / 2;
+    const dist = Math.abs(row - centerRow) / centerRow + Math.abs(col - centerCol) / centerCol;
+    return dist <= 1.15;
+  },
+  // Twin clusters, split by a gap down the middle.
+  (_row, col) => {
+    const centerCol = (FORMATION.cols - 1) / 2;
+    return Math.abs(col - centerCol) >= 1.1;
+  },
+  // Ring — a hollow center.
+  (row, col) => {
+    const centerRow = (FORMATION.rows - 1) / 2;
+    const centerCol = (FORMATION.cols - 1) / 2;
+    const dx = (col - centerCol) / centerCol;
+    const dy = (row - centerRow) / centerRow;
+    const dist = Math.sqrt(dx * dx + dy * dy);
+    return dist >= 0.45 && dist <= 1.05;
+  },
+];
+
+/** Flat mask (indexed like layout: row*cols+col) for the given wave number. */
+function buildWaveMask(wave: number): boolean[] {
+  const shape = WAVE_SHAPES[(wave - 1) % WAVE_SHAPES.length];
+  const mask: boolean[] = [];
+  for (let row = 0; row < FORMATION.rows; row++) {
+    for (let col = 0; col < FORMATION.cols; col++) {
+      mask.push(shape(row, col));
+    }
+  }
+  return mask;
+}
+
 /** Static world positions for every surviving shield block, across all
  * SHIELD.count bunkers — shields don't move, so unlike the formation this
  * doesn't need a parent group's transform applied at render time. */
@@ -201,11 +257,15 @@ export function Scene() {
     formation.position.set(0, 0, FORMATION.startZ);
     currentDifficulty.current = waveDifficulty(wave);
 
+    const mask = buildWaveMask(wave);
+    let waveCount = 0;
     for (let i = 0; i < ENEMY_COUNT; i++) {
-      enemyAlive.current[i] = true;
-      enemiesRef.current?.setEnemy(i, layout[i]);
+      enemyAlive.current[i] = mask[i];
+      enemiesRef.current?.setEnemy(i, mask[i] ? layout[i] : null);
+      if (mask[i]) waveCount++;
     }
-    aliveCount.current = ENEMY_COUNT;
+    aliveCount.current = waveCount;
+    useGameStore.getState().setEnemiesRemaining(waveCount);
 
     const shieldMesh = shieldMeshRef.current;
     for (let i = 0; i < shieldLayout.length; i++) {
@@ -229,7 +289,6 @@ export function Scene() {
 
     fireCooldown.current = 0;
     simTime.current = 0;
-    useGameStore.getState().setEnemiesRemaining(ENEMY_COUNT);
   }
 
   /**
@@ -284,6 +343,9 @@ export function Scene() {
           aliveCount: aliveCount.current,
           shipRef: ship,
           formationRef: formation,
+          spawnWaveDebug: (wave: number) => spawnWave(formation, wave),
+          layout,
+          enemyAliveArr: enemyAlive.current,
         };
       }
 
