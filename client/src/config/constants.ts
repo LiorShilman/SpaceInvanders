@@ -41,11 +41,22 @@ export const ARENA = {
   halfWidth: 13,
   minY: 0.5,
   maxY: 9.9,
-  shipZ: 8, // default spawn depth
+  shipZ: 8, // default spawn depth — behind the shields (SHIELD.z = 3), i.e. protected
   // Real forward/back piloting range (Z/C), not just an X/Y plane. Closer
   // (toward minZ) shortens bolt travel time — easier to lead the swaying
   // formation — at the cost of less reaction time to incoming fire.
-  minZ: 6,
+  //
+  // minZ deliberately reaches past SHIELD.z (3), not just up to it: an
+  // enemy bolt is blocked by a shield only if the shield sits somewhere
+  // between where the bolt was FIRED and where the SHIP currently is (bolts
+  // always travel from the formation toward increasing z, so whichever of
+  // shield-z / ship-z comes first along that path is what the bolt reaches
+  // first). Push forward (Z) past z=3 and the shields end up behind you —
+  // no protection, but you're right on top of the action and every shot
+  // lands almost instantly. Pull back (C) past z=3 and they're in front of
+  // you again, screening incoming fire like normal. A real tactical choice
+  // tied to actual position, not just a cosmetic depth range.
+  minZ: -2,
   maxZ: 13,
 } as const;
 
