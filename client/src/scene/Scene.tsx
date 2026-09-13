@@ -637,7 +637,16 @@ export function Scene() {
 
       // --- formation sway + advance ----------------------------------------
       formation.position.x = Math.sin(simTime.current * FORMATION.swaySpeed) * FORMATION.swayAmplitude;
-      formation.position.z = FORMATION.startZ + simTime.current * currentDifficulty.current.advanceSpeed;
+      // Capped at frontLineZ — the wave physically can't advance past the
+      // shields any more than a bolt can pass through one. Without this,
+      // nothing stopped the formation's own position from growing forever
+      // (the invasion check below only ever asked "is an enemy near the
+      // ship," never "did the wave itself pass through a wall it should
+      // have been physically blocked by").
+      formation.position.z = Math.min(
+        FORMATION.startZ + simTime.current * currentDifficulty.current.advanceSpeed,
+        FORMATION.frontLineZ,
+      );
 
       // "The wave broke through" means a real alive enemy actually reached
       // the ship (see HIT_RADIUS.enemyVsShip's own comment for why this
@@ -660,15 +669,10 @@ export function Scene() {
           break;
         }
       }
-      // A generous hard cap so a wave dodged indefinitely (a sparse shape,
-      // few enemies left) can't fly the formation infinitely far past the
-      // ship's own operable range and eventually break the visuals
-      // (enemies drifting behind the chase camera). The formation's own
-      // width already spans nearly the full arena once swayed, so this
-      // only ever matters for a near-empty wave.
-      const wayPastShip = formation.position.z > ARENA.maxZ + 15;
-
-      if (enemyReachedShip || wayPastShip) {
+      // (No separate "formation flew way past the ship" safety net needed
+      // here anymore — frontLineZ above already hard-stops the formation's
+      // own position well short of anywhere that could happen.)
+      if (enemyReachedShip) {
         // The wave reached the player line. With lives in play this isn't
         // automatically the end of the run — handleInvasion costs a life
         // outright and tells us whether one was left to spend.

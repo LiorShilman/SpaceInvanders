@@ -98,12 +98,13 @@
   box-shadow: 0 0 20px rgba(255, 46, 99, 0.5);
 }
 
-/* Touch controls only ever render on a touch-capable device (see App.tsx) —
-   but as a second line of defense, hide them outside a landscape-ish, phone
-   -width viewport so they can't linger over a desktop window if that
-   detection is ever wrong. */
-@media (min-width: 900px) {
-  .touch-controls {
-    display: none;
-  }
-}
+/* A width-based "hide these above 900px" rule used to live here as a
+   second line of defense against IS_TOUCH_DEVICE ever being wrong — it was
+   the actual bug behind "the control buttons keep disappearing": plenty of
+   real phones report a logical landscape width well past 900px (many
+   modern large phones sit in the 900-950px range), so it was hiding the
+   controls entirely on exactly the devices this feature is for. The JS
+   touch-capability check in App.tsx is the real, correct gate and doesn't
+   have this false-positive problem — removed rather than widened, since
+   any fixed width threshold has the same failure mode at some screen
+   size. */

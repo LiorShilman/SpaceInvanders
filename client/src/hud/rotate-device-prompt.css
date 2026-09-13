@@ -26,6 +26,24 @@
   max-width: 260px;
 }
 
+.rotate-prompt-dismiss {
+  margin-top: 8px;
+  font-family: "Consolas", monospace;
+  font-size: 13px;
+  color: #a9c2a0;
+  background: transparent;
+  border: 1px solid rgba(87, 224, 137, 0.35);
+  border-radius: 6px;
+  padding: 8px 18px;
+  cursor: pointer;
+}
+
+.rotate-prompt-dismiss:hover,
+.rotate-prompt-dismiss:active {
+  border-color: #57e089;
+  color: #57e089;
+}
+
 @keyframes rotate-prompt-spin {
   0%,
   20% {

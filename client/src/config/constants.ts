@@ -153,6 +153,21 @@ export const FORMATION = {
   // flanking — Phase 2 in docs/GAME_PLAN.md), not a fixed static bulge that
   // fights against readable firing. The grid is flat in Z again.
   startZ: -32, // more runway between ship and wave than the original -22
+  // The wave's own physical stopping point — shields (SHIELD.z = 3) are a
+  // real wall, not just something that happens to intercept bolts, so the
+  // formation shouldn't be able to fly through/past their position any
+  // more than an enemy bolt can. -8 (not simply "= SHIELD.z", which would
+  // let the models visually clip straight through the shield geometry
+  // before the formation's own position even nominally reaches it) is the
+  // same value empirically checked via screenshots for FORMATION.invadeZ
+  // earlier — at 1.8x scale, the models' own visual footprint already eats
+  // several units past their nominal center, and z=-8 was where the front
+  // row just brushes the shield tops without overlapping them. That old
+  // invadeZ has since been replaced by a real proximity check
+  // (HIT_RADIUS.enemyVsShip) for when a life is actually lost; this cap is
+  // a separate, purely physical one — the wave holds at the wall
+  // regardless of whether anyone's currently in danger from it.
+  frontLineZ: -8,
   swaySpeed: 0.6,
   swayAmplitude: 3.5,
   advanceSpeed: 0.4, // units/sec creeping toward the player (tuned to the longer runway above)

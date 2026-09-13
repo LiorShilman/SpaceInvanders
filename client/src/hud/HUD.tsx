@@ -8,8 +8,14 @@ interface HUDProps {
   anaglyph: boolean;
   onToggleAnaglyph: () => void;
   showFullscreenButton?: boolean;
-  onEnterFullscreen?: () => void;
+  isFullscreen?: boolean;
+  onToggleFullscreen?: () => void;
   showKeyboardHint?: boolean;
+  // Icon-only toggle buttons — a phone in landscape is often only
+  // 700-930px wide, and the full-text labels ("🔊 קול", "🔴🔵 משקפי
+  // אדום-כחול (3)", "⛶ מסך מלא") alongside 6+ stats needed 1100px+,
+  // pushing buttons at the row's end past the visible edge entirely.
+  compact?: boolean;
 }
 
 function formatClock(ms: number): string {
@@ -28,8 +34,10 @@ export function HUD({
   anaglyph,
   onToggleAnaglyph,
   showFullscreenButton,
-  onEnterFullscreen,
+  isFullscreen = false,
+  onToggleFullscreen,
   showKeyboardHint = true,
+  compact = false,
 }: HUDProps) {
   const {
     status,
@@ -139,17 +147,28 @@ export function HUD({
             </span>
           </div>
         )}
-        <button className="anaglyph-toggle" onClick={toggleMuted} data-active={!muted}>
-          {muted ? "🔇 שקט" : "🔊 קול"}
-        </button>
-        <button className="anaglyph-toggle" onClick={onToggleAnaglyph} data-active={anaglyph}>
-          🔴🔵 {anaglyph ? "תלת-ממד פעיל — כיבוי" : "משקפי אדום-כחול (3)"}
-        </button>
-        {showFullscreenButton && (
-          <button className="anaglyph-toggle" onClick={onEnterFullscreen}>
-            ⛶ מסך מלא
+        {/* One flex group, one shared auto-margin — three separate buttons
+            each carrying their own margin-inline-start: auto (the old
+            layout) could each end up on a different wrapped line with the
+            full row's free space added before just that one item, landing
+            it somewhere in the middle of the screen instead of docked with
+            its siblings. Grouping fixes that, and compact mode also gives
+            every button the same fixed square size instead of shrink-
+            wrapping to whatever its own icon count needs (1 vs 2 emoji
+            otherwise made visibly different-sized buttons). */}
+        <div className={compact ? "hud-toggle-group hud-toggle-group--compact" : "hud-toggle-group"}>
+          <button className="anaglyph-toggle" onClick={toggleMuted} data-active={!muted}>
+            {compact ? (muted ? "🔇" : "🔊") : muted ? "🔇 שקט" : "🔊 קול"}
           </button>
-        )}
+          <button className="anaglyph-toggle" onClick={onToggleAnaglyph} data-active={anaglyph}>
+            {compact ? "🔴🔵" : <>🔴🔵 {anaglyph ? "תלת-ממד פעיל — כיבוי" : "משקפי אדום-כחול (3)"}</>}
+          </button>
+          {showFullscreenButton && (
+            <button className="anaglyph-toggle" onClick={onToggleFullscreen} data-active={isFullscreen}>
+              {compact ? "⛶" : isFullscreen ? "⛶ צא ממסך מלא" : "⛶ מסך מלא"}
+            </button>
+          )}
+        </div>
       </div>
 
       {bannerText && (

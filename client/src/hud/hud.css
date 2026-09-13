@@ -12,7 +12,9 @@
   left: 18px;
   right: 18px;
   display: flex;
+  flex-wrap: wrap;
   gap: 28px;
+  row-gap: 10px;
   align-items: center;
   direction: rtl;
 }
@@ -25,6 +27,35 @@
 
 .hud-stat--num {
   min-width: 90px;
+}
+
+/* A phone in landscape is often only 700-930px wide — with every stat
+   (health/lives/score/wave/enemies/time, sometimes +weapon) plus the
+   toggle buttons at their desktop sizing, the row needed 1100px+ and the
+   toggle buttons (last in source order, docked to the row's end via
+   margin-inline-start: auto — see .anaglyph-toggle) ended up pushed past
+   the visible edge entirely: present in the DOM, invisible and
+   unreachable, not just visually cramped. flex-wrap above is the actual
+   fix (nothing can be shoved off-screen anymore, worst case it wraps to
+   its own line) — this tightens things enough that wrapping is rarely
+   even needed in practice. */
+@media (max-width: 900px) {
+  .hud-bar {
+    gap: 14px;
+    row-gap: 8px;
+  }
+
+  .hud-stat--num {
+    min-width: 56px;
+  }
+
+  .hud-value {
+    font-size: 15px;
+  }
+
+  .hud-value--wave {
+    font-size: 18px;
+  }
 }
 
 .hud-label {
@@ -140,8 +171,19 @@
   box-shadow: 0 0 10px rgba(226, 162, 63, 0.8);
 }
 
-.anaglyph-toggle {
+/* One shared auto-margin on the group (see HUD.tsx), not on each button —
+   three separately-auto-margined buttons could each land on a different
+   wrapped flex line with that whole line's free space added before just
+   that one item, stranding it away from its siblings instead of docked
+   together at the row's end. */
+.hud-toggle-group {
+  display: flex;
+  align-items: center;
+  gap: 10px;
   margin-inline-start: auto;
+}
+
+.anaglyph-toggle {
   pointer-events: all;
   font-family: "Consolas", monospace;
   font-size: 12px;
@@ -151,6 +193,28 @@
   border-radius: 5px;
   padding: 7px 12px;
   cursor: pointer;
+}
+
+/* Compact (touch) buttons carry 1-2 emoji instead of emoji+label — without
+   a fixed size they'd shrink-wrap to their own content and visibly differ
+   in width/height from each other for no reason a player would understand.
+   font-size was too big for the two-emoji case (🔴🔵 for the 3D toggle) —
+   two emoji at 18px each are ~36-40px wide combined, leaving almost no
+   breathing room in a 44px button and reading as oversized/cramped;
+   13px comfortably fits either the one- or two-emoji buttons with room to
+   spare, and nowrap+hidden is a hard backstop against the two-emoji case
+   ever visually spilling past the circle regardless of exact font
+   metrics on a given device. */
+.hud-toggle-group--compact .anaglyph-toggle {
+  width: 44px;
+  height: 44px;
+  padding: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 13px;
+  white-space: nowrap;
+  overflow: hidden;
 }
 
 .anaglyph-toggle:hover {
