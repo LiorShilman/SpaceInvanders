@@ -11,6 +11,13 @@ import { ShieldBlock } from "./ShieldBlock";
 import { Starfield } from "./Starfield";
 import { Nebula } from "./Nebula";
 import { Explosions, useExplosions } from "./Explosions";
+import { AimLine, LockReticle, AIM_LINE_CENTER_Z } from "./Sight";
+
+// How close (in x/y only, ignoring depth) an enemy needs to be to the ship's
+// current firing lane before the lock reticle latches onto it — generous
+// relative to HIT_RADIUS since jitter means enemies aren't grid-perfect, and
+// this is a "you're roughly lined up" cue, not a hit guarantee.
+const LOCK_RADIUS = 1.0;
 
 const ENEMY_COUNT = FORMATION.rows * FORMATION.cols;
 
@@ -106,6 +113,8 @@ export function Scene() {
 
   const shipRef = useRef<THREE.Group>(null);
   const formationRef = useRef<THREE.Group>(null);
+  const aimLineRef = useRef<THREE.Mesh>(null);
+  const lockReticleRef = useRef<THREE.Group>(null);
   const explosions = useExplosions();
   const enemyRefs = useMemo(
     () => Array.from({ length: ENEMY_COUNT }, () => createRef<THREE.Group>()),
@@ -279,6 +288,42 @@ export function Scene() {
         useGameStore.getState().damageShip(SHIP.maxHealth);
       }
 
+      // --- aim sight: a real 3D line down the ship's exact firing lane, plus
+      // a lock reticle on whichever enemy currently sits in it. Camera
+      // perspective makes eyeballing "what am I even under" from the ship's
+      // screen position alone unreliable — this draws the real answer.
+      if (aimLineRef.current) {
+        aimLineRef.current.position.set(ship.position.x, ship.position.y, AIM_LINE_CENTER_Z);
+      }
+      if (lockReticleRef.current) {
+        let lockedEnemy = -1;
+        let lockedDistSq = LOCK_RADIUS * LOCK_RADIUS;
+        for (let e = 0; e < ENEMY_COUNT; e++) {
+          if (!enemyAlive.current[e]) continue;
+          const local = layout[e];
+          const ex = formation.position.x + local[0];
+          const ey = formation.position.y + local[1];
+          const dx = ship.position.x - ex;
+          const dy = ship.position.y - ey;
+          const distSq = dx * dx + dy * dy;
+          if (distSq <= lockedDistSq) {
+            lockedDistSq = distSq;
+            lockedEnemy = e;
+          }
+        }
+        if (lockedEnemy >= 0) {
+          const local = layout[lockedEnemy];
+          lockReticleRef.current.visible = true;
+          lockReticleRef.current.position.set(
+            formation.position.x + local[0],
+            formation.position.y + local[1],
+            formation.position.z + local[2],
+          );
+        } else {
+          lockReticleRef.current.visible = false;
+        }
+      }
+
       // --- enemy firing: at most one shooter per column -----------------------
       for (let col = 0; col < FORMATION.cols; col++) {
         if (simTime.current < columnNextFire.current[col]) continue;
@@ -385,6 +430,8 @@ export function Scene() {
           useGameStore.getState().damageShip(PROJECTILE.enemyDamage);
         }
       }
+    } else if (lockReticleRef.current) {
+      lockReticleRef.current.visible = false;
     }
 
     // --- chase camera (keeps following even when not "playing", so the
@@ -417,6 +464,8 @@ export function Scene() {
       <Starfield />
 
       <Ship ref={shipRef} />
+      <AimLine ref={aimLineRef} />
+      <LockReticle ref={lockReticleRef} />
 
       {shieldLayout.map((pos, i) => (
         <ShieldBlock key={i} ref={shieldRefs[i]} position={pos} />
