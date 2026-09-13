@@ -48,6 +48,49 @@
   text-shadow: 0 0 8px rgba(87, 224, 137, 0.6);
 }
 
+.hud-value--weapon {
+  color: #c77dff;
+  text-shadow: 0 0 8px rgba(199, 125, 255, 0.6);
+  white-space: nowrap;
+}
+
+.hud-lives {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  height: 18px; /* matches .hud-value's line box so the row doesn't jump */
+}
+
+.hud-life-pip {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: #57e089;
+  box-shadow: 0 0 6px rgba(87, 224, 137, 0.8);
+  flex: none;
+}
+
+.hud-combo {
+  display: inline-block;
+  margin-inline-start: 6px;
+  font-size: 14px;
+  color: #57e089;
+  text-shadow: 0 0 8px rgba(87, 224, 137, 0.7);
+}
+
+/* Escalating heat as the streak climbs — a x2 reads the same as the score
+   itself, but x3/x4 shift toward gold then hot orange-red so a real streak
+   visibly stands out instead of every tier looking identical. */
+.hud-combo[data-tier="3"] {
+  color: #f2c94c;
+  text-shadow: 0 0 8px rgba(242, 201, 76, 0.7);
+}
+
+.hud-combo[data-tier="4"] {
+  color: #ff6b4a;
+  text-shadow: 0 0 10px rgba(255, 107, 74, 0.8);
+}
+
 .hud-value--mono {
   font-variant-numeric: tabular-nums;
   direction: ltr;

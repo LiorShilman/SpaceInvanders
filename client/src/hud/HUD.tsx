@@ -15,15 +15,36 @@ function formatClock(ms: number): string {
   return `${m}:${s.toString().padStart(2, "0")}`;
 }
 
+const WEAPON_NAMES: Record<string, string> = {
+  spread: "פיזור משולש",
+  rapid: "אש מהירה",
+};
+
 export function HUD({ anaglyph, onToggleAnaglyph }: HUDProps) {
-  const { status, health, score, wave, enemiesRemaining, bannerText, runStartedAt, reset, clearBanner } =
-    useGameStore();
+  const {
+    status,
+    health,
+    score,
+    wave,
+    enemiesRemaining,
+    bannerText,
+    runStartedAt,
+    lives,
+    comboMultiplier,
+    comboExpiresAt,
+    weapon,
+    weaponExpiresAt,
+    reset,
+    clearBanner,
+  } = useGameStore();
 
   const healthPct = Math.round((health / SHIP.maxHealth) * 100);
 
   // Real wall-clock elapsed time (not the simulation's own clock — see the
   // note on runStartedAt in gameStore) — ticks every second on its own,
-  // independent of the game's frame rate.
+  // independent of the game's frame rate. The same tick also drives the
+  // combo-multiplier and weapon-timer decay below (see comboExpiresAt/
+  // weaponExpiresAt) — no reason for a second interval just for those.
   const [now, setNow] = useState(() => Date.now());
   useEffect(() => {
     if (status !== "playing") return;
@@ -31,6 +52,13 @@ export function HUD({ anaglyph, onToggleAnaglyph }: HUDProps) {
     return () => clearInterval(interval);
   }, [status]);
   const elapsed = formatClock(now - runStartedAt);
+
+  // The store only resets comboMultiplier to 1 on the NEXT kill after the
+  // window lapses — between kills it just sits there stale. The HUD is the
+  // one place that actually needs "has it decayed yet," so it derives that
+  // itself from comboExpiresAt rather than trusting the stored value.
+  const displayMultiplier = now < comboExpiresAt ? comboMultiplier : 1;
+  const weaponSecondsLeft = Math.max(0, Math.ceil((weaponExpiresAt - now) / 1000));
 
   // The wave-cleared banner is transient — it clears itself a couple of
   // seconds after appearing, rather than needing a dismiss button.
@@ -56,8 +84,23 @@ export function HUD({ anaglyph, onToggleAnaglyph }: HUDProps) {
           </div>
         </div>
         <div className="hud-stat hud-stat--num">
+          <span className="hud-label">חיים</span>
+          <span className="hud-value hud-lives">
+            {Array.from({ length: lives + 1 }, (_, i) => (
+              <span key={i} className="hud-life-pip" />
+            ))}
+          </span>
+        </div>
+        <div className="hud-stat hud-stat--num">
           <span className="hud-label">ניקוד</span>
-          <span className="hud-value">{score.toLocaleString("he-IL")}</span>
+          <span className="hud-value">
+            {score.toLocaleString("he-IL")}
+            {displayMultiplier > 1 && (
+              <span className="hud-combo" data-tier={displayMultiplier}>
+                x{displayMultiplier}
+              </span>
+            )}
+          </span>
         </div>
         <div className="hud-stat hud-stat--num">
           <span className="hud-label">גל {wave}</span>
@@ -67,6 +110,14 @@ export function HUD({ anaglyph, onToggleAnaglyph }: HUDProps) {
           <span className="hud-label">זמן</span>
           <span className="hud-value hud-value--mono">{elapsed}</span>
         </div>
+        {weapon !== "base" && (
+          <div className="hud-stat hud-stat--num">
+            <span className="hud-label">נשק</span>
+            <span className="hud-value hud-value--weapon">
+              {WEAPON_NAMES[weapon] ?? weapon} · {weaponSecondsLeft}ש
+            </span>
+          </div>
+        )}
         <button className="anaglyph-toggle" onClick={onToggleAnaglyph} data-active={anaglyph}>
           🔴🔵 {anaglyph ? "תלת-ממד פעיל — כיבוי" : "משקפי אדום-כחול (3)"}
         </button>

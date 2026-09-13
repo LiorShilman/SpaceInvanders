@@ -22,6 +22,13 @@ export const COLORS = {
   enemyHull: "#2b1620",
   enemyHullDark: "#160a10",
   rimLight: "#6fa8ff",
+  // Pickups: a third hue family, distinct from both the ship's green and the
+  // enemies' magenta-red, so a drifting capsule reads as "neither of those"
+  // at a glance. Both weapon kinds (spread/rapid) share one color — which
+  // one you got is a HUD/banner detail, not something the pickup's own color
+  // needs to carry.
+  pickupHealth: "#48d1ff",
+  pickupWeapon: "#c77dff",
 } as const;
 
 // Arena bounds the player ship can move within (world units). Must cover the
@@ -37,9 +44,7 @@ export const ARENA = {
   shipZ: 8, // default spawn depth
   // Real forward/back piloting range (Z/C), not just an X/Y plane. Closer
   // (toward minZ) shortens bolt travel time — easier to lead the swaying
-  // formation — at the cost of less reaction time to incoming fire; minZ
-  // stays a little above the shields (z=3) and the invade line (z=5) so
-  // standing at the limit doesn't feel like clipping into either.
+  // formation — at the cost of less reaction time to incoming fire.
   minZ: 6,
   maxZ: 13,
 } as const;
@@ -48,6 +53,14 @@ export const SHIP = {
   speed: 9, // units/sec
   fireCooldown: 0.22, // seconds between shots
   maxHealth: 100,
+  // Extra chances beyond the current one — 2 means 3 total attempts per run.
+  // Losing the last of your health with lives left respawns you in place
+  // (same wave, same score) rather than ending the run outright.
+  startingLives: 2,
+  // Grace period after a respawn where the ship ignores enemy fire entirely
+  // (bolts pass through) — otherwise a respawn into a still-dense bolt
+  // pattern could burn the next life within the same second.
+  respawnInvulnerability: 2,
 };
 
 export const PROJECTILE = {
@@ -64,6 +77,44 @@ export const PROJECTILE = {
   // pure unused mesh/draw-call overhead. 40 each still leaves generous
   // headroom.
   poolSize: 40,
+};
+
+// Drops from killed enemies — a capsule drifts toward the ship's current
+// position and must be flown into, not auto-collected. The gentle x/y
+// homing is an assist (the field is wide and fast-paced), not autopilot: it
+// only pulls toward wherever the ship happens to be *right now*, so still
+// flying into its actual path is what closes the gap in time.
+export const PICKUP = {
+  dropChance: 0.12,
+  // Faster than any wave's own advanceSpeed so a capsule reliably reaches
+  // the ship's operating range within its lifetime even at wave 1.
+  speed: 3.4,
+  homingRate: 1.1, // x/y lerp factor per second, toward the ship's live position
+  radius: 1.05, // catch distance (ship <-> capsule)
+  lifetime: 9, // seconds before an uncaught capsule despawns
+  healthRestore: 30,
+};
+
+// Temporary alternate fire modes granted by a weapon-crate pickup — revert
+// to the plain single shot (SHIP.fireCooldown) once the timer runs out.
+export const WEAPON = {
+  duration: 18, // seconds a picked-up weapon lasts
+  spread: {
+    cooldown: 0.3, // slower than base — 3 bolts per trigger, not 1
+    offsets: [-0.6, 0, 0.6], // parallel bolts, not diverging — see Scene.tsx
+  },
+  rapid: {
+    cooldown: 0.09,
+  },
+};
+
+// Score combo: killing enemies without a gap longer than windowMs keeps
+// building the multiplier (capped); missing that window resets it to 1 on
+// the next kill. Pure skill-reward, no pickup needed for this one.
+export const COMBO = {
+  windowMs: 2500,
+  maxMultiplier: 4,
+  killScore: 100,
 };
 
 export const FORMATION = {

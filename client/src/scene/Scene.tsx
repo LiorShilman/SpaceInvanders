@@ -1,12 +1,24 @@
 import { createRef, useMemo, useRef } from "react";
 import { useFrame, useThree } from "@react-three/fiber";
 import * as THREE from "three";
-import { ARENA, COLORS, FORMATION, HIT_RADIUS, PROJECTILE, SHIELD, SHIP, WAVE_SCALING } from "../config/constants";
-import { useGameStore } from "../state/gameStore";
+import {
+  ARENA,
+  COLORS,
+  FORMATION,
+  HIT_RADIUS,
+  PICKUP,
+  PROJECTILE,
+  SHIELD,
+  SHIP,
+  WAVE_SCALING,
+  WEAPON,
+} from "../config/constants";
+import { useGameStore, type WeaponKind } from "../state/gameStore";
 import { useKeyboard } from "../hooks/useKeyboard";
 import { Ship } from "./Ship";
 import { Enemies, type EnemiesHandle } from "./Enemies";
 import { Projectile } from "./Projectile";
+import { Pickup } from "./Pickup";
 import { Shields } from "./Shields";
 import { Starfield } from "./Starfield";
 import { Nebula } from "./Nebula";
@@ -197,6 +209,29 @@ function spawn(pool: Pool, position: THREE.Vector3) {
   mesh.position.copy(position);
 }
 
+type PickupKind = "health" | "weapon";
+type PickupSlot = {
+  ref: React.RefObject<THREE.Mesh | null>;
+  active: boolean;
+  kind: PickupKind;
+  weaponKind: WeaponKind; // only meaningful when kind === "weapon"
+  age: number;
+};
+
+// A handful of concurrent capsules is generous — dropChance is 12% per
+// kill, and each despawns within PICKUP.lifetime seconds either way.
+const PICKUP_POOL_SIZE = 8;
+
+function makePickupPool(size: number): PickupSlot[] {
+  return Array.from({ length: size }, () => ({
+    ref: createRef<THREE.Mesh>(),
+    active: false,
+    kind: "health" as PickupKind,
+    weaponKind: "base" as WeaponKind,
+    age: 0,
+  }));
+}
+
 export function Scene() {
   const input = useKeyboard();
   const { camera } = useThree();
@@ -232,6 +267,12 @@ export function Scene() {
 
   const playerBolts = useRef<Pool>(makePool(PROJECTILE.poolSize, -1, PROJECTILE.playerSpeed));
   const enemyBolts = useRef<Pool>(makePool(PROJECTILE.poolSize, 1, PROJECTILE.enemySpeed));
+  const pickups = useRef<PickupSlot[]>(makePickupPool(PICKUP_POOL_SIZE));
+
+  // The currently-held weapon and when it expires — mirrored into the store
+  // (see collectWeapon/revertWeapon) purely so the HUD can display it;
+  // Scene's own firing logic reads this ref, not the store, every frame.
+  const weaponRef = useRef<{ kind: WeaponKind; expiresAt: number }>({ kind: "base", expiresAt: 0 });
 
   const fireCooldown = useRef(0);
   const simTime = useRef(0);
@@ -247,6 +288,7 @@ export function Scene() {
   function resetRun(ship: THREE.Group, formation: THREE.Group) {
     ship.position.set(0, (ARENA.minY + ARENA.maxY) / 2, ARENA.shipZ);
     ship.rotation.set(0, 0, 0);
+    weaponRef.current = { kind: "base", expiresAt: 0 };
     useGameStore.getState().reset();
     spawnWave(formation, 1);
   }
@@ -293,6 +335,16 @@ export function Scene() {
       }
     }
 
+    // A carried-over weapon pickup is deliberately NOT cleared here (only in
+    // resetRun) — a timed weapon should span a wave clear, not evaporate the
+    // instant the next wave spawns. Leftover capsules, on the other hand,
+    // don't belong to any particular wave and are just cleared out.
+    for (const slot of pickups.current) {
+      slot.active = false;
+      const mesh = slot.ref.current;
+      if (mesh) mesh.visible = false;
+    }
+
     fireCooldown.current = 0;
     simTime.current = 0;
   }
@@ -322,6 +374,32 @@ export function Scene() {
     return false;
   }
 
+  /**
+   * Rolls PICKUP.dropChance at an enemy's death position — most kills drop
+   * nothing. When one does, it's health (restore some) or a weapon crate
+   * (spread or rapid, picked at random), 50/50 either way.
+   */
+  function spawnPickup(position: THREE.Vector3) {
+    if (Math.random() >= PICKUP.dropChance) return;
+    const slot = pickups.current.find((p) => !p.active);
+    const mesh = slot?.ref.current;
+    if (!slot || !mesh) return;
+
+    slot.active = true;
+    slot.age = 0;
+    if (Math.random() < 0.5) {
+      slot.kind = "health";
+    } else {
+      slot.kind = "weapon";
+      slot.weaponKind = Math.random() < 0.5 ? "spread" : "rapid";
+    }
+
+    mesh.visible = true;
+    mesh.position.copy(position);
+    const mat = mesh.material as THREE.MeshBasicMaterial;
+    mat.color.set(slot.kind === "health" ? COLORS.pickupHealth : COLORS.pickupWeapon);
+  }
+
   useFrame((_state, rawDelta) => {
     const delta = Math.min(rawDelta, 1 / 30); // clamp to avoid huge steps on tab-switch
     const status = useGameStore.getState().status;
@@ -340,6 +418,16 @@ export function Scene() {
     if (status === "playing") {
       simTime.current += delta;
 
+      // Wall-clock, not simTime — respawn invulnerability is a real-time
+      // grace period (see SHIP.respawnInvulnerability), independent of how
+      // fast the simulation itself is running.
+      const now = Date.now();
+      const invulnerable = now < useGameStore.getState().invulnerableUntil;
+      // Blink the whole ship while invulnerable — the classic arcade "just
+      // respawned" tell, and the only visible sign a player gets that shots
+      // are currently passing through them for free.
+      ship.visible = invulnerable ? Math.floor(now / 100) % 2 === 0 : true;
+
       if (import.meta.env.DEV) {
         // Console/debugging convenience only — never included in a
         // production build (see also __gameStore in main.tsx).
@@ -352,6 +440,9 @@ export function Scene() {
           spawnWaveDebug: (wave: number) => spawnWave(formation, wave),
           layout,
           enemyAliveArr: enemyAlive.current,
+          weaponRef,
+          pickupsRef: pickups.current,
+          playerBoltsRef: playerBolts.current,
         };
       }
 
@@ -376,14 +467,32 @@ export function Scene() {
       // one more piece of "this is a real cockpit," not a flat plane sled.
       ship.rotation.x = THREE.MathUtils.lerp(ship.rotation.x, move.z * 0.2, 0.15);
 
+      // --- weapon expiry: a timed pickup reverts to the base weapon once
+      // its clock runs out. Silent by design (see revertWeapon).
+      if (weaponRef.current.kind !== "base" && now >= weaponRef.current.expiresAt) {
+        weaponRef.current = { kind: "base", expiresAt: 0 };
+        useGameStore.getState().revertWeapon();
+      }
+
       // --- player firing ---------------------------------------------------
       fireCooldown.current -= delta;
       if (input.current.fire && fireCooldown.current <= 0) {
-        fireCooldown.current = SHIP.fireCooldown;
-        spawn(
-          playerBolts.current,
-          new THREE.Vector3(ship.position.x, ship.position.y, ship.position.z - 1),
-        );
+        const heldWeapon = weaponRef.current.kind;
+        if (heldWeapon === "spread") {
+          fireCooldown.current = WEAPON.spread.cooldown;
+          for (const offsetX of WEAPON.spread.offsets) {
+            spawn(
+              playerBolts.current,
+              new THREE.Vector3(ship.position.x + offsetX, ship.position.y, ship.position.z - 1),
+            );
+          }
+        } else {
+          fireCooldown.current = heldWeapon === "rapid" ? WEAPON.rapid.cooldown : SHIP.fireCooldown;
+          spawn(
+            playerBolts.current,
+            new THREE.Vector3(ship.position.x, ship.position.y, ship.position.z - 1),
+          );
+        }
       }
 
       // --- formation sway + advance ----------------------------------------
@@ -391,8 +500,19 @@ export function Scene() {
       formation.position.z = FORMATION.startZ + simTime.current * currentDifficulty.current.advanceSpeed;
 
       if (formation.position.z >= FORMATION.invadeZ) {
-        // The wave reached the player line — the run is over.
-        useGameStore.getState().damageShip(SHIP.maxHealth);
+        // The wave reached the player line. With lives in play this isn't
+        // automatically the end of the run — handleInvasion costs a life
+        // outright and tells us whether one was left to spend.
+        const survived = useGameStore.getState().handleInvasion();
+        if (survived) {
+          // A life remained: throw the player back into a fresh attempt at
+          // this same wave. Just healing/respawning the ship in place would
+          // leave the formation sitting exactly where it already broke
+          // through, re-triggering this same check the very next frame.
+          ship.position.set(0, (ARENA.minY + ARENA.maxY) / 2, ARENA.shipZ);
+          ship.rotation.set(0, 0, 0);
+          spawnWave(formation, useGameStore.getState().wave);
+        }
       }
 
       // --- aim sight: a real 3D line down the ship's exact firing lane, plus
@@ -504,7 +624,8 @@ export function Scene() {
             mesh.visible = false;
             explosions.trigger(new THREE.Vector3(ex, ey, ez), COLORS.amber);
 
-            useGameStore.getState().addScore(100);
+            useGameStore.getState().registerKill();
+            spawnPickup(new THREE.Vector3(ex, ey, ez));
             aliveCount.current -= 1;
             useGameStore.getState().setEnemiesRemaining(aliveCount.current);
             if (aliveCount.current <= 0) {
@@ -512,6 +633,45 @@ export function Scene() {
               spawnWave(formation, useGameStore.getState().wave);
             }
             break;
+          }
+        }
+      }
+
+      // --- pickups: drift toward the ship, catch on contact, expire otherwise --
+      for (const slot of pickups.current) {
+        if (!slot.active) continue;
+        const mesh = slot.ref.current;
+        if (!mesh) continue;
+
+        slot.age += delta;
+        mesh.position.z += PICKUP.speed * delta;
+        // Soft homing assist: pulls toward wherever the ship IS right now,
+        // not a locked-in intercept course — still has to be roughly in the
+        // way for this to close the gap before the lifetime runs out.
+        mesh.position.x = THREE.MathUtils.lerp(mesh.position.x, ship.position.x, PICKUP.homingRate * delta);
+        mesh.position.y = THREE.MathUtils.lerp(mesh.position.y, ship.position.y, PICKUP.homingRate * delta);
+        mesh.rotation.y += delta * 2.4;
+        mesh.rotation.x += delta * 1.1;
+
+        if (slot.age >= PICKUP.lifetime || mesh.position.z > ship.position.z + 6) {
+          slot.active = false;
+          mesh.visible = false;
+          continue;
+        }
+
+        const dx = mesh.position.x - ship.position.x;
+        const dy = mesh.position.y - ship.position.y;
+        const dz = mesh.position.z - ship.position.z;
+        if (dx * dx + dy * dy + dz * dz <= PICKUP.radius ** 2) {
+          slot.active = false;
+          mesh.visible = false;
+          if (slot.kind === "health") {
+            explosions.trigger(ship.position.clone(), COLORS.pickupHealth);
+            useGameStore.getState().collectHealth(PICKUP.healthRestore);
+          } else {
+            explosions.trigger(ship.position.clone(), COLORS.pickupWeapon);
+            weaponRef.current = { kind: slot.weaponKind, expiresAt: now + WEAPON.duration * 1000 };
+            useGameStore.getState().collectWeapon(slot.weaponKind, WEAPON.duration * 1000);
           }
         }
       }
@@ -538,6 +698,12 @@ export function Scene() {
           continue;
         }
 
+        // While invulnerable (just respawned), bolts pass straight through —
+        // no collision, no damage — rather than colliding but silently
+        // no-op'ing on damageShip's own guard, so it visually reads as
+        // "phased out," not "hits landing that just don't seem to matter."
+        if (invulnerable) continue;
+
         const dx = mesh.position.x - ship.position.x;
         const dy = mesh.position.y - ship.position.y;
         const dz = mesh.position.z - ship.position.z;
@@ -548,8 +714,11 @@ export function Scene() {
           useGameStore.getState().damageShip(PROJECTILE.enemyDamage);
         }
       }
-    } else if (lockReticleRef.current) {
-      lockReticleRef.current.visible = false;
+    } else {
+      // Not playing (game over) — don't leave the ship frozen mid-blink from
+      // whatever phase the respawn-invulnerability flash was in.
+      ship.visible = true;
+      if (lockReticleRef.current) lockReticleRef.current.visible = false;
     }
 
     // --- chase camera (keeps following even when not "playing", so the
@@ -597,6 +766,9 @@ export function Scene() {
       ))}
       {enemyBolts.current.refs.map((ref, i) => (
         <Projectile key={`e${i}`} ref={ref} color={COLORS.enemyBolt} />
+      ))}
+      {pickups.current.map((p, i) => (
+        <Pickup key={`pk${i}`} ref={p.ref as React.RefObject<THREE.Mesh>} />
       ))}
 
       <Explosions ref={explosions.ref} />
