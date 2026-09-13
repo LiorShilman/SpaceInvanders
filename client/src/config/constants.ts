@@ -73,8 +73,17 @@ export const FORMATION = {
   enemyFireIntervalMax: 4.5,
 };
 
-// Destructible bunkers between the ship and the wave — block both sides'
-// fire, chip away block by block. The one piece of the original arcade
+// Each cleared wave respawns a new one — harder, not the same — via these
+// per-wave multipliers (wave 1 is the baseline FORMATION values above).
+export const WAVE_SCALING = {
+  advanceSpeedGrowth: 1.12, // x per wave
+  fireIntervalShrink: 0.94, // x per wave, floored below
+  minFireIntervalMin: 0.6,
+  minFireIntervalMax: 1.2,
+};
+
+// Destructible bunkers between the ship and the wave — chip away block by
+// block as they absorb incoming enemy fire. The one piece of the original arcade
 // layout that was missing entirely.
 export const SHIELD = {
   count: 4,

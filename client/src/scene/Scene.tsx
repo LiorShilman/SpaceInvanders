@@ -1,7 +1,7 @@
 import { createRef, useMemo, useRef } from "react";
 import { useFrame, useThree } from "@react-three/fiber";
 import * as THREE from "three";
-import { ARENA, COLORS, FORMATION, HIT_RADIUS, PROJECTILE, SHIELD, SHIP } from "../config/constants";
+import { ARENA, COLORS, FORMATION, HIT_RADIUS, PROJECTILE, SHIELD, SHIP, WAVE_SCALING } from "../config/constants";
 import { useGameStore } from "../state/gameStore";
 import { useKeyboard } from "../hooks/useKeyboard";
 import { Ship } from "./Ship";
@@ -61,6 +61,17 @@ function buildShieldLayout(): [number, number, number][] {
     }
   }
   return blocks;
+}
+
+/** Per-wave difficulty: wave 1 is exactly the FORMATION baseline. */
+function waveDifficulty(wave: number) {
+  const growth = Math.pow(WAVE_SCALING.advanceSpeedGrowth, wave - 1);
+  const shrink = Math.pow(WAVE_SCALING.fireIntervalShrink, wave - 1);
+  return {
+    advanceSpeed: FORMATION.advanceSpeed * growth,
+    fireMin: Math.max(WAVE_SCALING.minFireIntervalMin, FORMATION.enemyFireIntervalMin * shrink),
+    fireMax: Math.max(WAVE_SCALING.minFireIntervalMax, FORMATION.enemyFireIntervalMax * shrink),
+  };
 }
 
 interface Pool {
@@ -124,13 +135,32 @@ export function Scene() {
   const fireCooldown = useRef(0);
   const simTime = useRef(0);
   const prevStatus = useRef<string | null>(null);
+  // Recomputed by spawnWave() each wave — read by the sway/advance formula
+  // and the enemy-fire scheduler instead of the raw FORMATION constants, so
+  // later waves genuinely escalate (see WAVE_SCALING).
+  const currentDifficulty = useRef(waveDifficulty(1));
 
-  /** Re-arms the whole wave: called on first mount and on every "שחק שוב". */
-  function resetWorld(ship: THREE.Group, formation: THREE.Group) {
+  /** Full run reset: called on first mount and whenever "שחק שוב" follows a
+   * game over. Resets the ship and the score/health/wave in the store —
+   * spawnWave (below) handles everything wave-specific. */
+  function resetRun(ship: THREE.Group, formation: THREE.Group) {
     ship.position.set(0, (ARENA.minY + ARENA.maxY) / 2, ARENA.shipZ);
     ship.rotation.set(0, 0, 0);
+    useGameStore.getState().reset();
+    spawnWave(formation, 1);
+  }
 
+  /**
+   * Arms one wave: a fresh enemy grid, shields repaired, ammo cleared, and
+   * difficulty scaled to `wave`. Called for wave 1 by resetRun above, and
+   * again — without touching the ship, score or health — every time the
+   * player clears a wave (see the player-bolt hit-test below). This is the
+   * one thing that was missing for the game to not just stop after a single
+   * wave: beating it now escalates into the next one instead of ending.
+   */
+  function spawnWave(formation: THREE.Group, wave: number) {
     formation.position.set(0, 0, FORMATION.startZ);
+    currentDifficulty.current = waveDifficulty(wave);
 
     for (let i = 0; i < ENEMY_COUNT; i++) {
       enemyAlive.current[i] = true;
@@ -145,10 +175,9 @@ export function Scene() {
       if (mesh) mesh.visible = true;
     }
 
+    const { fireMin, fireMax } = currentDifficulty.current;
     for (let col = 0; col < FORMATION.cols; col++) {
-      columnNextFire.current[col] =
-        FORMATION.enemyFireIntervalMin +
-        Math.random() * (FORMATION.enemyFireIntervalMax - FORMATION.enemyFireIntervalMin);
+      columnNextFire.current[col] = fireMin + Math.random() * (fireMax - fireMin);
     }
 
     for (const pool of [playerBolts.current, enemyBolts.current]) {
@@ -198,7 +227,7 @@ export function Scene() {
     // to "playing" — otherwise the next run would start with last run's dead
     // enemies, drifted formation and spent ammo pool still in place.
     if (status === "playing" && prevStatus.current !== "playing") {
-      resetWorld(ship, formation);
+      resetRun(ship, formation);
     }
     prevStatus.current = status;
 
@@ -243,7 +272,7 @@ export function Scene() {
 
       // --- formation sway + advance ----------------------------------------
       formation.position.x = Math.sin(simTime.current * FORMATION.swaySpeed) * FORMATION.swayAmplitude;
-      formation.position.z = FORMATION.startZ + simTime.current * FORMATION.advanceSpeed;
+      formation.position.z = FORMATION.startZ + simTime.current * currentDifficulty.current.advanceSpeed;
 
       if (formation.position.z >= FORMATION.invadeZ) {
         // The wave reached the player line — the run is over.
@@ -265,10 +294,8 @@ export function Scene() {
         if (aliveInColumn.length === 0) continue; // whole column is dead — silent
         const shooter = aliveInColumn[Math.floor(Math.random() * aliveInColumn.length)];
 
-        columnNextFire.current[col] =
-          simTime.current +
-          FORMATION.enemyFireIntervalMin +
-          Math.random() * (FORMATION.enemyFireIntervalMax - FORMATION.enemyFireIntervalMin);
+        const { fireMin, fireMax } = currentDifficulty.current;
+        columnNextFire.current[col] = simTime.current + fireMin + Math.random() * (fireMax - fireMin);
 
         const local = layout[shooter];
         const worldPos = new THREE.Vector3(
@@ -320,7 +347,10 @@ export function Scene() {
             useGameStore.getState().addScore(100);
             aliveCount.current -= 1;
             useGameStore.getState().setEnemiesRemaining(aliveCount.current);
-            if (aliveCount.current <= 0) useGameStore.getState().clearWave();
+            if (aliveCount.current <= 0) {
+              useGameStore.getState().advanceWave();
+              spawnWave(formation, useGameStore.getState().wave);
+            }
             break;
           }
         }

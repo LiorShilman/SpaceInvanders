@@ -1,7 +1,10 @@
 import { create } from "zustand";
 import { SHIP } from "../config/constants";
 
-export type GameStatus = "playing" | "cleared" | "gameover";
+// "cleared" was a dead end — no such terminal state anymore. Beating a wave
+// spawns a new, harder one (see Scene's spawnWave); only running out of
+// health ends the run.
+export type GameStatus = "playing" | "gameover";
 
 interface GameState {
   status: GameStatus;
@@ -9,10 +12,12 @@ interface GameState {
   score: number;
   wave: number;
   enemiesRemaining: number;
+  bannerText: string | null;
   damageShip: (amount: number) => void;
   addScore: (points: number) => void;
   setEnemiesRemaining: (count: number) => void;
-  clearWave: () => void;
+  advanceWave: () => void;
+  clearBanner: () => void;
   reset: () => void;
 }
 
@@ -22,6 +27,7 @@ const initial = {
   score: 0,
   wave: 1,
   enemiesRemaining: 0,
+  bannerText: null as string | null,
 };
 
 export const useGameStore = create<GameState>((set, get) => ({
@@ -37,10 +43,13 @@ export const useGameStore = create<GameState>((set, get) => ({
 
   setEnemiesRemaining: (count) => set({ enemiesRemaining: count }),
 
-  clearWave: () => {
-    if (get().status !== "playing") return;
-    set({ status: "cleared" });
-  },
+  // Score/health carry over — only the wave counter and a transient HUD
+  // banner change here. Scene calls this once the last enemy in a wave
+  // dies, then spawns the next (harder) wave itself.
+  advanceWave: () =>
+    set((s) => ({ wave: s.wave + 1, bannerText: `גל ${s.wave} נהדף — גל ${s.wave + 1} מתקרב` })),
+
+  clearBanner: () => set({ bannerText: null }),
 
   reset: () => set({ ...initial }),
 }));

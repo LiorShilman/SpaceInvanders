@@ -1,3 +1,4 @@
+import { useEffect } from "react";
 import { useGameStore } from "../state/gameStore";
 import { SHIP } from "../config/constants";
 import "./hud.css";
@@ -8,9 +9,18 @@ interface HUDProps {
 }
 
 export function HUD({ anaglyph, onToggleAnaglyph }: HUDProps) {
-  const { status, health, score, wave, enemiesRemaining, reset } = useGameStore();
+  const { status, health, score, wave, enemiesRemaining, bannerText, reset, clearBanner } =
+    useGameStore();
 
   const healthPct = Math.round((health / SHIP.maxHealth) * 100);
+
+  // The wave-cleared banner is transient — it clears itself a couple of
+  // seconds after appearing, rather than needing a dismiss button.
+  useEffect(() => {
+    if (!bannerText) return;
+    const timer = setTimeout(clearBanner, 2200);
+    return () => clearTimeout(timer);
+  }, [bannerText, clearBanner]);
 
   return (
     <div className="hud">
@@ -38,12 +48,18 @@ export function HUD({ anaglyph, onToggleAnaglyph }: HUDProps) {
         </button>
       </div>
 
-      {status !== "playing" && (
+      {bannerText && (
+        <div className="wave-banner" key={bannerText}>
+          {bannerText}
+        </div>
+      )}
+
+      {status === "gameover" && (
         <div className="hud-overlay">
           <div className="hud-panel">
-            <h1>{status === "gameover" ? "הפולשים חדרו" : "הגל נבלם"}</h1>
+            <h1>הפולשים חדרו</h1>
             <p>
-              ניקוד סופי: <b>{score.toLocaleString("he-IL")}</b>
+              הגעת לגל <b>{wave}</b> · ניקוד סופי: <b>{score.toLocaleString("he-IL")}</b>
             </p>
             <button onClick={reset}>שחק שוב</button>
           </div>
