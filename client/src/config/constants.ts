@@ -84,7 +84,19 @@ export const FORMATION = {
   // flanking — Phase 2 in docs/GAME_PLAN.md), not a fixed static bulge that
   // fights against readable firing. The grid is flat in Z again.
   startZ: -32, // more runway between ship and wave than the original -22
-  invadeZ: 5, // if the front row reaches this, the wave has broken through
+  // If the (flat, single-z) formation reaches this, the wave has broken
+  // through. Was a bare 5 — only 1 unit before ARENA.minZ (6), which reads
+  // like a safety margin but isn't one, and not by a small amount either.
+  // This is a forward-facing perspective camera near the ship: apparent size
+  // grows with 1/(distance to camera), so the last stretch of the approach
+  // compresses dramatically — screenshots confirmed the formation already
+  // visually swallowing the shields and the ship by z=-5..0, a good 8-11
+  // units of raw z before it would reach anything close to ARENA.minZ. A
+  // small buffer off minZ (as a flat linear gap) can't fix a problem that's
+  // fundamentally non-linear in z. -8 was the empirically-checked cutoff:
+  // the formation's front row just brushes the shield tops there, still
+  // read as "closing in," not "already on top of you."
+  invadeZ: ARENA.minZ - 14, // = -8
   swaySpeed: 0.6,
   swayAmplitude: 3.5,
   advanceSpeed: 0.4, // units/sec creeping toward the player (tuned to the longer runway above)
@@ -121,7 +133,10 @@ export const SHIELD = {
   cols: 5,
   rows: SHIELD_ROWS,
   blockSize: 0.42,
-  z: 3, // between the ship (8) and the invade line (5)
+  // A fixed collision plane bolts pass through en route to the ship — not
+  // tied to the formation's own advancing z, so it doesn't need to sit in
+  // any particular order relative to FORMATION.invadeZ (see there).
+  z: 3,
   baseY: 1.7,
   hitRadius: 0.34,
   // 1 = block present. A notch open at the bottom two rows' middle column,
