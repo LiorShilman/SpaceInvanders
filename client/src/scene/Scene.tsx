@@ -12,22 +12,19 @@ import { Starfield } from "./Starfield";
 const ENEMY_COUNT = FORMATION.rows * FORMATION.cols;
 
 /**
- * Fixed grid layout, centered on the formation's local origin. Not a flat
- * plane: columns curve toward the player at the center (a shallow dome) and
- * higher rows recede further back, so the wave reads as a real 3D volume
- * rather than a picture that just gets closer along Z.
+ * Fixed grid layout, centered on the formation's local origin, flat in Z —
+ * see the note on FORMATION in config/constants.ts for why. The wave's own
+ * sway + advance still moves it through real 3D space; individual enemies
+ * just don't each carry their own static depth offset.
  */
 function buildFormationLayout(): [number, number, number][] {
   const layout: [number, number, number][] = [];
   const maxCol = (FORMATION.cols - 1) / 2;
   for (let row = 0; row < FORMATION.rows; row++) {
     for (let col = 0; col < FORMATION.cols; col++) {
-      const colOffset = col - maxCol;
-      const x = colOffset * FORMATION.spacingX;
+      const x = (col - maxCol) * FORMATION.spacingX;
       const y = 2.4 + row * FORMATION.spacingY;
-      const arch = (1 - (colOffset / maxCol) ** 2) * FORMATION.archDepth;
-      const z = arch - row * FORMATION.rowDepth;
-      layout.push([x, y, z]);
+      layout.push([x, y, 0]);
     }
   }
   return layout;
@@ -72,10 +69,11 @@ export function Scene() {
   const layout = useMemo(buildFormationLayout, []);
 
   const enemyAlive = useRef<boolean[]>(Array.from({ length: ENEMY_COUNT }, () => true));
-  // Only the frontmost alive enemy in each column may fire (the classic
-  // rule) — one timer per column, not per enemy, so at most FORMATION.cols
-  // shots are ever in the air from the wave at once instead of up to
-  // ENEMY_COUNT independent emitters firing in an unreadable blur.
+  // At most one shooter per column at a time (a random alive enemy in that
+  // column, picked fresh each time) — one timer per column, not per enemy,
+  // so at most FORMATION.cols shots are ever in the air from the wave at
+  // once instead of up to ENEMY_COUNT independent emitters firing in an
+  // unreadable blur.
   const columnNextFire = useRef<number[]>(Array.from({ length: FORMATION.cols }, () => 0));
   const aliveCount = useRef(ENEMY_COUNT);
 
@@ -176,29 +174,25 @@ export function Scene() {
       formation.position.x = Math.sin(simTime.current * FORMATION.swaySpeed) * FORMATION.swayAmplitude;
       formation.position.z = FORMATION.startZ + simTime.current * FORMATION.advanceSpeed;
 
-      // The center-front columns bulge FORMATION.archDepth ahead of the
-      // group's own origin (see buildFormationLayout) — that bulge is what
-      // actually reaches the player first.
-      if (formation.position.z + FORMATION.archDepth >= FORMATION.invadeZ) {
+      if (formation.position.z >= FORMATION.invadeZ) {
         // The wave reached the player line — the run is over.
         useGameStore.getState().damageShip(SHIP.maxHealth);
       }
 
-      // --- enemy firing: only the frontmost alive enemy per column ------------
+      // --- enemy firing: at most one shooter per column -----------------------
       for (let col = 0; col < FORMATION.cols; col++) {
         if (simTime.current < columnNextFire.current[col]) continue;
 
-        // Row 0 is the frontmost (see buildFormationLayout) — find the first
-        // alive row in this column; if the whole column is dead, it's silent.
-        let shooter = -1;
+        // Any alive enemy in the column may take this shot (picked at
+        // random) — not always the frontmost, so fire doesn't monotonously
+        // come from the same row for as long as it survives.
+        const aliveInColumn: number[] = [];
         for (let row = 0; row < FORMATION.rows; row++) {
           const idx = row * FORMATION.cols + col;
-          if (enemyAlive.current[idx]) {
-            shooter = idx;
-            break;
-          }
+          if (enemyAlive.current[idx]) aliveInColumn.push(idx);
         }
-        if (shooter === -1) continue;
+        if (aliveInColumn.length === 0) continue; // whole column is dead — silent
+        const shooter = aliveInColumn[Math.floor(Math.random() * aliveInColumn.length)];
 
         columnNextFire.current[col] =
           simTime.current +

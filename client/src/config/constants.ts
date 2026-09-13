@@ -36,13 +36,12 @@ export const FORMATION = {
   cols: 6,
   spacingX: 1.8,
   spacingY: 1.3,
-  // Gives the formation real volume instead of a flat plane: the center
-  // columns bulge toward the player, and higher rows recede further back —
-  // like a shallow, curved amphitheater wall facing the ship. Kept modest:
-  // too deep and an edge column's row-0 shooter sits far enough behind the
-  // center bulge that its shots read as coming from behind the formation.
-  archDepth: 1.1,
-  rowDepth: 0.35,
+  // A static per-enemy depth offset (tried: center columns bulging forward,
+  // higher rows receding) was reverted — whichever enemy fired, if it wasn't
+  // in the "front" slot of that shape, its shot visibly spawned from behind
+  // its neighbors. Real 3D variety belongs in actual behavior (diving,
+  // flanking — Phase 2 in docs/GAME_PLAN.md), not a fixed static bulge that
+  // fights against readable firing. The grid is flat in Z again.
   startZ: -32, // more runway between ship and wave than the original -22
   invadeZ: 5, // if the front row reaches this, the wave has broken through
   swaySpeed: 0.6,
