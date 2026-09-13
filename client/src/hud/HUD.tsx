@@ -2,7 +2,12 @@ import { useGameStore } from "../state/gameStore";
 import { SHIP } from "../config/constants";
 import "./hud.css";
 
-export function HUD() {
+interface HUDProps {
+  anaglyph: boolean;
+  onToggleAnaglyph: () => void;
+}
+
+export function HUD({ anaglyph, onToggleAnaglyph }: HUDProps) {
   const { status, health, score, wave, enemiesRemaining, reset } = useGameStore();
 
   const healthPct = Math.round((health / SHIP.maxHealth) * 100);
@@ -28,6 +33,9 @@ export function HUD() {
           <span className="hud-label">גל {wave}</span>
           <span className="hud-value">{enemiesRemaining} נותרו</span>
         </div>
+        <button className="anaglyph-toggle" onClick={onToggleAnaglyph} data-active={anaglyph}>
+          🔴🔵 {anaglyph ? "תלת-ממד פעיל — כיבוי" : "משקפי אדום-כחול (3)"}
+        </button>
       </div>
 
       {status !== "playing" && (

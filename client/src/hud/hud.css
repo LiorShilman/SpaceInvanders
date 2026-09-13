@@ -62,6 +62,29 @@
   box-shadow: 0 0 10px rgba(226, 162, 63, 0.8);
 }
 
+.anaglyph-toggle {
+  margin-inline-start: auto;
+  pointer-events: all;
+  font-family: "Consolas", monospace;
+  font-size: 12px;
+  color: #d9e5d1;
+  background: rgba(16, 21, 14, 0.85);
+  border: 1px solid #2f6b48;
+  border-radius: 5px;
+  padding: 7px 12px;
+  cursor: pointer;
+}
+
+.anaglyph-toggle:hover {
+  border-color: #57e089;
+}
+
+.anaglyph-toggle[data-active="true"] {
+  color: #0a0d0a;
+  background: #57e089;
+  border-color: #57e089;
+}
+
 .hud-controls {
   position: absolute;
   bottom: 16px;

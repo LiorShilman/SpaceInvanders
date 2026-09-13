@@ -1,33 +1,66 @@
 import { createRef, useMemo, useRef } from "react";
 import { useFrame, useThree } from "@react-three/fiber";
 import * as THREE from "three";
-import { ARENA, COLORS, FORMATION, HIT_RADIUS, PROJECTILE, SHIP } from "../config/constants";
+import { ARENA, COLORS, FORMATION, HIT_RADIUS, PROJECTILE, SHIELD, SHIP } from "../config/constants";
 import { useGameStore } from "../state/gameStore";
 import { useKeyboard } from "../hooks/useKeyboard";
 import { Ship } from "./Ship";
 import { Enemy } from "./Enemy";
 import { Projectile } from "./Projectile";
+import { ShieldBlock } from "./ShieldBlock";
 import { Starfield } from "./Starfield";
+import { Nebula } from "./Nebula";
+import { Explosions, useExplosions } from "./Explosions";
 
 const ENEMY_COUNT = FORMATION.rows * FORMATION.cols;
 
 /**
- * Fixed grid layout, centered on the formation's local origin, flat in Z —
- * see the note on FORMATION in config/constants.ts for why. The wave's own
- * sway + advance still moves it through real 3D space; individual enemies
- * just don't each carry their own static depth offset.
+ * Grid layout, centered on the formation's local origin, flat in Z — see the
+ * note on FORMATION in config/constants.ts for why. Not a rigid rectangle
+ * either: alternating rows zigzag a quarter-column each way (symmetric, so
+ * the bounding box doesn't grow — an earlier one-directional stagger pushed
+ * odd rows further out than ARENA.halfWidth could ever reach) and every
+ * enemy gets a small random nudge, so the wave reads as an organic swarm
+ * rather than a spreadsheet.
  */
 function buildFormationLayout(): [number, number, number][] {
   const layout: [number, number, number][] = [];
   const maxCol = (FORMATION.cols - 1) / 2;
   for (let row = 0; row < FORMATION.rows; row++) {
+    const stagger = (row % 2 === 0 ? -1 : 1) * FORMATION.spacingX * 0.25;
     for (let col = 0; col < FORMATION.cols; col++) {
-      const x = (col - maxCol) * FORMATION.spacingX;
-      const y = 2.4 + row * FORMATION.spacingY;
+      // Capped low enough that two neighbors' worst-case combined jitter
+      // can't close the gap to less than the enemy model's own ~1.8-unit
+      // display diameter (see Enemy.tsx's 1.8x scale) — a wider jitter
+      // range looked organic in isolation but let adjacent bodies overlap.
+      const jitterX = (Math.random() - 0.5) * FORMATION.spacingX * 0.18;
+      const jitterY = (Math.random() - 0.5) * FORMATION.spacingY * 0.18;
+      const x = (col - maxCol) * FORMATION.spacingX + stagger + jitterX;
+      const y = 2.4 + row * FORMATION.spacingY + jitterY;
       layout.push([x, y, 0]);
     }
   }
   return layout;
+}
+
+/** Static world positions for every surviving shield block, across all
+ * SHIELD.count bunkers — shields don't move, so unlike the formation this
+ * doesn't need a parent group's transform applied at render time. */
+function buildShieldLayout(): [number, number, number][] {
+  const blocks: [number, number, number][] = [];
+  const spacing = (ARENA.halfWidth * 2) / (SHIELD.count + 1);
+  for (let s = 0; s < SHIELD.count; s++) {
+    const shieldX = -ARENA.halfWidth + spacing * (s + 1);
+    for (let row = 0; row < SHIELD.rows; row++) {
+      for (let col = 0; col < SHIELD.cols; col++) {
+        if (!SHIELD.pattern[row][col]) continue;
+        const x = shieldX + (col - (SHIELD.cols - 1) / 2) * SHIELD.blockSize;
+        const y = SHIELD.baseY + (SHIELD.rows - 1 - row) * SHIELD.blockSize;
+        blocks.push([x, y, SHIELD.z]);
+      }
+    }
+  }
+  return blocks;
 }
 
 interface Pool {
@@ -62,11 +95,19 @@ export function Scene() {
 
   const shipRef = useRef<THREE.Group>(null);
   const formationRef = useRef<THREE.Group>(null);
+  const explosions = useExplosions();
   const enemyRefs = useMemo(
     () => Array.from({ length: ENEMY_COUNT }, () => createRef<THREE.Group>()),
     [],
   );
   const layout = useMemo(buildFormationLayout, []);
+
+  const shieldLayout = useMemo(buildShieldLayout, []);
+  const shieldRefs = useMemo(
+    () => Array.from({ length: shieldLayout.length }, () => createRef<THREE.Mesh>()),
+    [shieldLayout.length],
+  );
+  const shieldAlive = useRef<boolean[]>(Array.from({ length: shieldLayout.length }, () => true));
 
   const enemyAlive = useRef<boolean[]>(Array.from({ length: ENEMY_COUNT }, () => true));
   // At most one shooter per column at a time (a random alive enemy in that
@@ -98,6 +139,12 @@ export function Scene() {
     }
     aliveCount.current = ENEMY_COUNT;
 
+    for (let i = 0; i < shieldLayout.length; i++) {
+      shieldAlive.current[i] = true;
+      const mesh = shieldRefs[i].current;
+      if (mesh) mesh.visible = true;
+    }
+
     for (let col = 0; col < FORMATION.cols; col++) {
       columnNextFire.current[col] =
         FORMATION.enemyFireIntervalMin +
@@ -115,6 +162,29 @@ export function Scene() {
     fireCooldown.current = 0;
     simTime.current = 0;
     useGameStore.getState().setEnemiesRemaining(ENEMY_COUNT);
+  }
+
+  /**
+   * Absorbs a shot — from either side, same as the arcade original — into
+   * whichever alive shield block it's touching. Returns true (and consumes
+   * that block) on a hit, so the caller knows to stop the bolt there instead
+   * of letting it continue toward the ship or the wave.
+   */
+  function tryHitShield(x: number, y: number, z: number): boolean {
+    for (let i = 0; i < shieldLayout.length; i++) {
+      if (!shieldAlive.current[i]) continue;
+      const [bx, by, bz] = shieldLayout[i];
+      const dx = x - bx;
+      const dy = y - by;
+      const dz = z - bz;
+      if (dx * dx + dy * dy + dz * dz <= SHIELD.hitRadius ** 2) {
+        shieldAlive.current[i] = false;
+        const mesh = shieldRefs[i].current;
+        if (mesh) mesh.visible = false;
+        return true;
+      }
+    }
+    return false;
   }
 
   useFrame((_state, rawDelta) => {
@@ -140,6 +210,7 @@ export function Scene() {
         // production build (see also __gameStore in main.tsx).
         (window as unknown as { __nexusDebug?: unknown }).__nexusDebug = {
           simTime: simTime.current,
+          simTimeRef: simTime,
           aliveCount: aliveCount.current,
           shipRef: ship,
           formationRef: formation,
@@ -221,6 +292,14 @@ export function Scene() {
           continue;
         }
 
+        // Shields only stop incoming enemy fire, not the ship's own shots.
+        // Bolts fly in a dead-straight line at whatever height they were
+        // fired from (no arc) and enemy rows sit at fixed heights, so a
+        // shield at any fixed height would otherwise permanently block the
+        // player's own shots at whichever row shares that height — most
+        // painfully the bottom row, since shields sit low. Letting player
+        // fire pass through keeps shields useful as cover without turning
+        // them into a self-imposed ceiling on which rows are reachable.
         for (let e = 0; e < ENEMY_COUNT; e++) {
           if (!enemyAlive.current[e]) continue;
           const local = layout[e];
@@ -236,6 +315,7 @@ export function Scene() {
             if (enemyMesh) enemyMesh.visible = false;
             playerBolts.current.active[i] = false;
             mesh.visible = false;
+            explosions.trigger(new THREE.Vector3(ex, ey, ez), COLORS.amber);
 
             useGameStore.getState().addScore(100);
             aliveCount.current -= 1;
@@ -259,12 +339,19 @@ export function Scene() {
           continue;
         }
 
+        if (tryHitShield(mesh.position.x, mesh.position.y, mesh.position.z)) {
+          enemyBolts.current.active[i] = false;
+          mesh.visible = false;
+          continue;
+        }
+
         const dx = mesh.position.x - ship.position.x;
         const dy = mesh.position.y - ship.position.y;
         const dz = mesh.position.z - ship.position.z;
         if (dx * dx + dy * dy + dz * dz <= HIT_RADIUS.enemyProjectileVsShip ** 2) {
           enemyBolts.current.active[i] = false;
           mesh.visible = false;
+          explosions.trigger(ship.position.clone(), COLORS.phosphor);
           useGameStore.getState().damageShip(PROJECTILE.enemyDamage);
         }
       }
@@ -289,12 +376,21 @@ export function Scene() {
       {/* far must clear the formation's own start distance (~52 units from
           the camera at wave start) or the whole wave spawns fogged-out. */}
       <fog attach="fog" args={[COLORS.background, 25, 95]} />
-      <ambientLight intensity={0.4} />
-      <directionalLight position={[5, 10, 5]} intensity={0.6} />
+      <ambientLight intensity={0.25} />
+      <directionalLight position={[5, 10, 5]} intensity={0.7} />
+      {/* Cool rim light from behind/below the wave — separates the ships'
+          silhouettes from the dark background instead of leaving their far
+          side a flat, shapeless black. */}
+      <directionalLight position={[-6, -3, -20]} intensity={0.5} color={COLORS.rimLight} />
 
+      <Nebula />
       <Starfield />
 
       <Ship ref={shipRef} />
+
+      {shieldLayout.map((pos, i) => (
+        <ShieldBlock key={i} ref={shieldRefs[i]} position={pos} />
+      ))}
 
       <group ref={formationRef} position={[0, 0, FORMATION.startZ]}>
         <pointLight color={COLORS.amber} intensity={3} distance={14} position={[0, 3.7, 1]} />
@@ -309,6 +405,8 @@ export function Scene() {
       {enemyBolts.current.refs.map((ref, i) => (
         <Projectile key={`e${i}`} ref={ref} color={COLORS.amber} />
       ))}
+
+      <Explosions ref={explosions.ref} />
     </>
   );
 }
