@@ -147,6 +147,26 @@ function buildShieldLayout(): [number, number, number][] {
 
 // Reused across calls — setMatrixAt only reads it synchronously, so one
 // shared object avoids allocating a THREE.Object3D per shield hit/reset.
+/**
+ * Retints every part of the ship marked userData.shipAccent (wing strakes,
+ * canopy glow, engine glow, the ship's own point light — see Ship.tsx) to
+ * `hex`. Called whenever the held weapon changes, so a buff is visible on
+ * the ship itself at a glance, not just in a HUD badge. Traversing the
+ * whole ship is cheap here since this only runs on state changes (pickup
+ * collected, buff expired, run reset), never per-frame.
+ */
+function setShipAccentColor(ship: THREE.Group, hex: string) {
+  ship.traverse((obj) => {
+    if (!obj.userData.shipAccent) return;
+    if (obj instanceof THREE.Mesh) {
+      const mat = obj.material as THREE.MeshStandardMaterial;
+      mat.emissive.set(hex);
+    } else if (obj instanceof THREE.PointLight) {
+      obj.color.set(hex);
+    }
+  });
+}
+
 const _shieldDummy = new THREE.Object3D();
 
 /** Shows or hides one shield instance (destroyed blocks scale to zero —
@@ -316,6 +336,7 @@ export function Scene() {
     ship.position.set(0, (ARENA.minY + ARENA.maxY) / 2, ARENA.shipZ);
     ship.rotation.set(0, 0, 0);
     weaponRef.current = { kind: "base", expiresAt: 0 };
+    setShipAccentColor(ship, COLORS.phosphor);
     useGameStore.getState().reset();
     spawnWave(formation, 1);
   }
@@ -586,6 +607,7 @@ export function Scene() {
       // its clock runs out. Silent by design (see revertWeapon).
       if (weaponRef.current.kind !== "base" && now >= weaponRef.current.expiresAt) {
         weaponRef.current = { kind: "base", expiresAt: 0 };
+        setShipAccentColor(ship, COLORS.phosphor);
         useGameStore.getState().revertWeapon();
       }
 
@@ -807,6 +829,7 @@ export function Scene() {
           } else {
             explosions.trigger(ship.position.clone(), COLORS.pickupWeapon);
             weaponRef.current = { kind: slot.weaponKind, expiresAt: now + WEAPON.duration * 1000 };
+            setShipAccentColor(ship, COLORS.pickupWeapon);
             useGameStore.getState().collectWeapon(slot.weaponKind, WEAPON.duration * 1000);
           }
         }

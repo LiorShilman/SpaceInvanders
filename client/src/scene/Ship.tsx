@@ -33,7 +33,10 @@ export const Ship = forwardRef<THREE.Group>(function Ship(_props, ref) {
             <boxGeometry args={[1.1, 0.06, 0.85]} />
             <meshStandardMaterial color={COLORS.hull} metalness={0.6} roughness={0.4} flatShading />
           </mesh>
-          <mesh position={[side * 1.28, -0.05, -0.3]}>
+          {/* userData.shipAccent marks every energy part Scene retints while
+              a weapon buff is active (see setShipAccentColor) — a quick,
+              glanceable "something's active" cue independent of the HUD. */}
+          <mesh position={[side * 1.28, -0.05, -0.3]} userData={{ shipAccent: true }}>
             <boxGeometry args={[0.32, 0.03, 0.14]} />
             <meshStandardMaterial
               color={COLORS.phosphor}
@@ -46,7 +49,7 @@ export const Ship = forwardRef<THREE.Group>(function Ship(_props, ref) {
       ))}
 
       {/* Cockpit canopy — small glassy dome just behind the nose. */}
-      <mesh position={[0, 0.3, -0.15]} scale={[0.6, 0.48, 0.6]} castShadow>
+      <mesh position={[0, 0.3, -0.15]} scale={[0.6, 0.48, 0.6]} castShadow userData={{ shipAccent: true }}>
         <sphereGeometry args={[0.32, 10, 8, 0, Math.PI * 2, 0, Math.PI / 1.7]} />
         <meshStandardMaterial
           color={COLORS.phosphorDim}
@@ -66,7 +69,7 @@ export const Ship = forwardRef<THREE.Group>(function Ship(_props, ref) {
             <cylinderGeometry args={[0.17, 0.14, 0.5, 8]} />
             <meshStandardMaterial color={COLORS.hullDark} metalness={0.8} roughness={0.3} flatShading />
           </mesh>
-          <mesh position={[0, 0, 0.32]} rotation={[Math.PI / 2, 0, 0]}>
+          <mesh position={[0, 0, 0.32]} rotation={[Math.PI / 2, 0, 0]} userData={{ shipAccent: true }}>
             <coneGeometry args={[0.11, 0.4, 8]} />
             <meshStandardMaterial
               color={COLORS.phosphor}
@@ -78,7 +81,13 @@ export const Ship = forwardRef<THREE.Group>(function Ship(_props, ref) {
         </group>
       ))}
 
-      <pointLight color={COLORS.phosphor} intensity={3} distance={5} position={[0, 0.1, 0.9]} />
+      <pointLight
+        color={COLORS.phosphor}
+        intensity={3}
+        distance={5}
+        position={[0, 0.1, 0.9]}
+        userData={{ shipAccent: true }}
+      />
     </group>
   );
 });
