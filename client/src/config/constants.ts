@@ -153,19 +153,6 @@ export const FORMATION = {
   // flanking — Phase 2 in docs/GAME_PLAN.md), not a fixed static bulge that
   // fights against readable firing. The grid is flat in Z again.
   startZ: -32, // more runway between ship and wave than the original -22
-  // If the (flat, single-z) formation reaches this, the wave has broken
-  // through. Was a bare 5 — only 1 unit before ARENA.minZ (6), which reads
-  // like a safety margin but isn't one, and not by a small amount either.
-  // This is a forward-facing perspective camera near the ship: apparent size
-  // grows with 1/(distance to camera), so the last stretch of the approach
-  // compresses dramatically — screenshots confirmed the formation already
-  // visually swallowing the shields and the ship by z=-5..0, a good 8-11
-  // units of raw z before it would reach anything close to ARENA.minZ. A
-  // small buffer off minZ (as a flat linear gap) can't fix a problem that's
-  // fundamentally non-linear in z. -8 was the empirically-checked cutoff:
-  // the formation's front row just brushes the shield tops there, still
-  // read as "closing in," not "already on top of you."
-  invadeZ: ARENA.minZ - 14, // = -8
   swaySpeed: 0.6,
   swayAmplitude: 3.5,
   advanceSpeed: 0.4, // units/sec creeping toward the player (tuned to the longer runway above)
@@ -203,8 +190,7 @@ export const SHIELD = {
   rows: SHIELD_ROWS,
   blockSize: 0.42,
   // A fixed collision plane bolts pass through en route to the ship — not
-  // tied to the formation's own advancing z, so it doesn't need to sit in
-  // any particular order relative to FORMATION.invadeZ (see there).
+  // tied to the formation's own advancing z at all.
   z: 3,
   baseY: 1.7,
   hitRadius: 0.34,
@@ -231,4 +217,17 @@ export const SHIELD_HEALTH_COLORS = {
 export const HIT_RADIUS = {
   playerProjectileVsEnemy: 0.75,
   enemyProjectileVsShip: 0.85,
+  // "The wave broke through" used to be a fixed z-depth check on the
+  // formation's own position — completely blind to where the SHIP actually
+  // was. The formation sways side to side (FORMATION.swayAmplitude) and,
+  // depending on the wave's shape, can leave its remaining enemies bunched
+  // far to one side; the old check fired the instant that depth was
+  // crossed regardless of whether any live enemy was anywhere near the
+  // ship, which could end a run (or cost a life) with the visible battle
+  // nowhere close to you. This is the real thing that should matter
+  // instead: an actual alive enemy has to reach within this distance of
+  // the ship. Enemy models are ~1.8x scale, noticeably bigger than a
+  // projectile, so this is generously larger than either hit radius above
+  // — a real "it ran you over," not a graze.
+  enemyVsShip: 2,
 };

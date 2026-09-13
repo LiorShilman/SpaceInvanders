@@ -639,7 +639,36 @@ export function Scene() {
       formation.position.x = Math.sin(simTime.current * FORMATION.swaySpeed) * FORMATION.swayAmplitude;
       formation.position.z = FORMATION.startZ + simTime.current * currentDifficulty.current.advanceSpeed;
 
-      if (formation.position.z >= FORMATION.invadeZ) {
+      // "The wave broke through" means a real alive enemy actually reached
+      // the ship (see HIT_RADIUS.enemyVsShip's own comment for why this
+      // replaced a fixed depth-only check) — not an abstract line the
+      // formation's own position crossed regardless of where the ship
+      // happened to be standing. The formation is flat in z (every alive
+      // enemy shares formation.position.z), so only x/y actually vary here.
+      let enemyReachedShip = false;
+      for (let e = 0; e < ENEMY_COUNT; e++) {
+        if (!enemyAlive.current[e]) continue;
+        const local = layout[e];
+        const ex = formation.position.x + local[0];
+        const ey = formation.position.y + local[1];
+        const ez = formation.position.z + local[2];
+        const dx = ship.position.x - ex;
+        const dy = ship.position.y - ey;
+        const dz = ship.position.z - ez;
+        if (dx * dx + dy * dy + dz * dz <= HIT_RADIUS.enemyVsShip ** 2) {
+          enemyReachedShip = true;
+          break;
+        }
+      }
+      // A generous hard cap so a wave dodged indefinitely (a sparse shape,
+      // few enemies left) can't fly the formation infinitely far past the
+      // ship's own operable range and eventually break the visuals
+      // (enemies drifting behind the chase camera). The formation's own
+      // width already spans nearly the full arena once swayed, so this
+      // only ever matters for a near-empty wave.
+      const wayPastShip = formation.position.z > ARENA.maxZ + 15;
+
+      if (enemyReachedShip || wayPastShip) {
         // The wave reached the player line. With lives in play this isn't
         // automatically the end of the run — handleInvasion costs a life
         // outright and tells us whether one was left to spend.
