@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { useGameStore } from "../state/gameStore";
 import { SHIP } from "../config/constants";
+import { isMuted, setMuted } from "../audio/sound";
 import "./hud.css";
 
 interface HUDProps {
@@ -39,6 +40,13 @@ export function HUD({ anaglyph, onToggleAnaglyph }: HUDProps) {
   } = useGameStore();
 
   const healthPct = Math.round((health / SHIP.maxHealth) * 100);
+
+  const [muted, setMutedState] = useState(isMuted);
+  const toggleMuted = () => {
+    const next = !muted;
+    setMuted(next);
+    setMutedState(next);
+  };
 
   // Real wall-clock elapsed time (not the simulation's own clock — see the
   // note on runStartedAt in gameStore) — ticks every second on its own,
@@ -118,6 +126,9 @@ export function HUD({ anaglyph, onToggleAnaglyph }: HUDProps) {
             </span>
           </div>
         )}
+        <button className="anaglyph-toggle" onClick={toggleMuted} data-active={!muted}>
+          {muted ? "🔇 שקט" : "🔊 קול"}
+        </button>
         <button className="anaglyph-toggle" onClick={onToggleAnaglyph} data-active={anaglyph}>
           🔴🔵 {anaglyph ? "תלת-ממד פעיל — כיבוי" : "משקפי אדום-כחול (3)"}
         </button>

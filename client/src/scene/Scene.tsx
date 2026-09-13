@@ -14,6 +14,7 @@ import {
   WEAPON,
 } from "../config/constants";
 import { useGameStore, type WeaponKind } from "../state/gameStore";
+import { sound } from "../audio/sound";
 import { useInput } from "../hooks/useInput";
 import { Ship } from "./Ship";
 import { Enemies, type EnemiesHandle } from "./Enemies";
@@ -491,6 +492,7 @@ export function Scene() {
           moveShieldBlockToTier(j, tier);
         }
 
+        sound.shieldHit();
         return true;
       }
     }
@@ -630,6 +632,7 @@ export function Scene() {
             new THREE.Vector3(ship.position.x, ship.position.y, ship.position.z - 1),
           );
         }
+        sound.playerFire(); // once per trigger pull, not once per bolt (spread fires 3 at once)
       }
 
       // --- formation sway + advance ----------------------------------------
@@ -641,7 +644,11 @@ export function Scene() {
         // automatically the end of the run — handleInvasion costs a life
         // outright and tells us whether one was left to spend.
         const survived = useGameStore.getState().handleInvasion();
+        if (!survived && useGameStore.getState().status === "gameover") {
+          sound.gameOver();
+        }
         if (survived) {
+          sound.lifeLost();
           // A life remained: push the wave back to its starting depth and
           // respawn the ship, but touch NOTHING else — enemies already
           // killed stay dead, shield damage stays, ammo in flight keeps
@@ -740,6 +747,7 @@ export function Scene() {
           formation.position.z + local[2],
         );
         spawn(enemyBolts.current, worldPos);
+        sound.enemyFire();
       }
 
       // --- player bolts: move, cull, hit-test against enemies ---------------
@@ -781,6 +789,7 @@ export function Scene() {
             playerBolts.current.active[i] = false;
             mesh.visible = false;
             explosions.trigger(new THREE.Vector3(ex, ey, ez), COLORS.amber);
+            sound.enemyHit();
 
             useGameStore.getState().registerKill();
             spawnPickup(new THREE.Vector3(ex, ey, ez));
@@ -789,6 +798,7 @@ export function Scene() {
             if (aliveCount.current <= 0) {
               useGameStore.getState().advanceWave();
               spawnWave(formation, useGameStore.getState().wave);
+              sound.waveClear();
             }
             break;
           }
@@ -826,11 +836,13 @@ export function Scene() {
           if (slot.kind === "health") {
             explosions.trigger(ship.position.clone(), COLORS.pickupHealth);
             useGameStore.getState().collectHealth(PICKUP.healthRestore);
+            sound.pickupHealth();
           } else {
             explosions.trigger(ship.position.clone(), COLORS.pickupWeapon);
             weaponRef.current = { kind: slot.weaponKind, expiresAt: now + WEAPON.duration * 1000 };
             setShipAccentColor(ship, COLORS.pickupWeapon);
             useGameStore.getState().collectWeapon(slot.weaponKind, WEAPON.duration * 1000);
+            sound.pickupWeapon();
           }
         }
       }
@@ -870,7 +882,15 @@ export function Scene() {
           enemyBolts.current.active[i] = false;
           mesh.visible = false;
           explosions.trigger(ship.position.clone(), COLORS.phosphor);
+          const livesBefore = useGameStore.getState().lives;
           useGameStore.getState().damageShip(PROJECTILE.enemyDamage);
+          const after = useGameStore.getState();
+          // We already know (via the invulnerable check above) this damage
+          // wasn't blocked — pick the sound by what it actually cost:
+          // just health, a whole life, or the run itself.
+          if (after.status === "gameover") sound.gameOver();
+          else if (after.lives < livesBefore) sound.lifeLost();
+          else sound.playerHit();
         }
       }
     } else {

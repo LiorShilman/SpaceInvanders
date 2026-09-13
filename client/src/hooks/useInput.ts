@@ -1,4 +1,5 @@
 import { useEffect, useRef } from "react";
+import { unlockAudio } from "../audio/sound";
 
 export interface InputState {
   left: boolean;
@@ -47,6 +48,10 @@ export function useInput(): React.RefObject<InputState> {
 
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
+      // Browsers refuse to start any audio before a real user gesture —
+      // this is the earliest one available, so every keydown tries to
+      // unlock it (a no-op after the first successful call).
+      unlockAudio();
       const key = KEY_MAP[e.code];
       if (!key) return;
       e.preventDefault();
@@ -64,6 +69,7 @@ export function useInput(): React.RefObject<InputState> {
     // stopPropagation(), so a plain window-level listener would otherwise
     // also arm "fire" on every click of them.
     const onMouseDown = (e: MouseEvent) => {
+      unlockAudio();
       if (e.button !== 0) return;
       if (!(e.target instanceof HTMLCanvasElement)) return;
       e.preventDefault();
