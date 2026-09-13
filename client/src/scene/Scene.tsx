@@ -18,8 +18,9 @@ import { useKeyboard } from "../hooks/useKeyboard";
 import { Ship } from "./Ship";
 import { Enemies, type EnemiesHandle } from "./Enemies";
 import { Projectile } from "./Projectile";
+import { EnemyBolt } from "./EnemyBolt";
 import { Pickup } from "./Pickup";
-import { Shields } from "./Shields";
+import { Shields, type ShieldTierMeshes } from "./Shields";
 import { Starfield } from "./Starfield";
 import { Nebula } from "./Nebula";
 import { Explosions, useExplosions } from "./Explosions";
@@ -172,6 +173,15 @@ function setShieldInstance(
   mesh.setMatrixAt(i, _shieldDummy.matrix);
 }
 
+// Tier index: 0 = healthy (> 66% of a bunker's blocks remain), 1 = damaged
+// (> 33%), 2 = critical (<= 33%) — matches the mesh order returned by
+// <Shields>'s ShieldTierMeshes (healthy/damaged/critical).
+function shieldTierForFraction(fraction: number): 0 | 1 | 2 {
+  if (fraction > 0.66) return 0;
+  if (fraction > 0.33) return 1;
+  return 2;
+}
+
 /** Per-wave difficulty: wave 1 is exactly the FORMATION baseline. */
 function waveDifficulty(wave: number) {
   const growth = Math.pow(WAVE_SCALING.advanceSpeedGrowth, wave - 1);
@@ -184,7 +194,12 @@ function waveDifficulty(wave: number) {
 }
 
 interface Pool {
-  refs: React.RefObject<THREE.Mesh | null>[];
+  // Object3D, not Mesh — the player's Projectile forwards a <mesh>, but the
+  // enemy's bolt (see EnemyBolt.tsx) is a small <group> of two meshes for a
+  // richer plasma-glob look. Both are Object3Ds; nothing in this pool's own
+  // movement/collision code needs anything Mesh-specific (no material
+  // access here).
+  refs: React.RefObject<THREE.Object3D | null>[];
   active: boolean[];
   dir: number; // +1 (toward player) or -1 (toward formation)
   speed: number;
@@ -192,7 +207,7 @@ interface Pool {
 
 function makePool(size: number, dir: number, speed: number): Pool {
   return {
-    refs: Array.from({ length: size }, () => createRef<THREE.Mesh>()),
+    refs: Array.from({ length: size }, () => createRef<THREE.Object3D>()),
     active: Array.from({ length: size }, () => false),
     dir,
     speed,
@@ -211,7 +226,11 @@ function spawn(pool: Pool, position: THREE.Vector3) {
 
 type PickupKind = "health" | "weapon";
 type PickupSlot = {
-  ref: React.RefObject<THREE.Mesh | null>;
+  // The root of a <Pickup> group, which contains BOTH visual variants as
+  // named children — see Pickup.tsx. Not a single mesh: a pooled slot is
+  // reused across kinds, and telling health/weapon apart by shape (not just
+  // color) needed two real, differently-shaped children to toggle between.
+  ref: React.RefObject<THREE.Group | null>;
   active: boolean;
   kind: PickupKind;
   weaponKind: WeaponKind; // only meaningful when kind === "weapon"
@@ -224,7 +243,7 @@ const PICKUP_POOL_SIZE = 8;
 
 function makePickupPool(size: number): PickupSlot[] {
   return Array.from({ length: size }, () => ({
-    ref: createRef<THREE.Mesh>(),
+    ref: createRef<THREE.Group>(),
     active: false,
     kind: "health" as PickupKind,
     weaponKind: "base" as WeaponKind,
@@ -253,8 +272,16 @@ export function Scene() {
       ),
     [shieldLayout],
   );
-  const shieldMeshRef = useRef<THREE.InstancedMesh>(null);
+  const shieldMeshRef = useRef<ShieldTierMeshes>(null);
   const shieldAlive = useRef<boolean[]>(Array.from({ length: shieldLayout.length }, () => true));
+  // Which of the 3 tier meshes each block currently lives in (0/1/2 =
+  // healthy/damaged/critical) — needed to know where to hide it when it
+  // dies or moves to a different tier (see moveShieldBlockToTier).
+  const shieldBlockTier = useRef<number[]>(Array.from({ length: shieldLayout.length }, () => 0));
+  const blocksPerShield = shieldLayout.length / SHIELD.count;
+  // Remaining alive-block count per bunker — drives that bunker's tier
+  // independently of every other bunker.
+  const shieldBunkerAlive = useRef<number[]>(Array.from({ length: SHIELD.count }, () => blocksPerShield));
 
   const enemyAlive = useRef<boolean[]>(Array.from({ length: ENEMY_COUNT }, () => true));
   // At most one shooter per column at a time (a random alive enemy in that
@@ -315,12 +342,36 @@ export function Scene() {
     aliveCount.current = waveCount;
     useGameStore.getState().setEnemiesRemaining(waveCount);
 
-    const shieldMesh = shieldMeshRef.current;
+    // Every tier mesh is sized to the FULL block count (see Shields.tsx),
+    // but a block only ever explicitly occupies one tier at a time —
+    // moveShieldBlockToTier only ever touches the tier a block is
+    // LEAVING, so on this very first setup (nothing has "left" anything
+    // yet) the damaged/critical meshes' matching indices are never
+    // touched at all. InstancedMesh does NOT default uninitialized
+    // instances to hidden — an untouched instanceMatrix is all zeros,
+    // which is a degenerate transform, not a scaled-to-nothing one, and
+    // rendered as a small stray artifact rather than nothing. Explicitly
+    // clearing every index in the OTHER two tiers here (not just relying
+    // on the diff-based mover) guarantees every instance in every tier
+    // mesh has a real, defined transform before anything ever renders.
+    const tiers = shieldMeshRef.current;
     for (let i = 0; i < shieldLayout.length; i++) {
       shieldAlive.current[i] = true;
-      if (shieldMesh) setShieldInstance(shieldMesh, i, shieldLayout[i], shieldRotations[i]);
+      shieldBlockTier.current[i] = 0;
+      if (tiers) {
+        if (tiers.damaged) setShieldInstance(tiers.damaged, i, null);
+        if (tiers.critical) setShieldInstance(tiers.critical, i, null);
+        if (tiers.healthy) setShieldInstance(tiers.healthy, i, shieldLayout[i], shieldRotations[i]);
+      }
     }
-    if (shieldMesh) shieldMesh.instanceMatrix.needsUpdate = true;
+    if (tiers) {
+      if (tiers.healthy) tiers.healthy.instanceMatrix.needsUpdate = true;
+      if (tiers.damaged) tiers.damaged.instanceMatrix.needsUpdate = true;
+      if (tiers.critical) tiers.critical.instanceMatrix.needsUpdate = true;
+    }
+    for (let b = 0; b < SHIELD.count; b++) {
+      shieldBunkerAlive.current[b] = blocksPerShield;
+    }
 
     const { fireMin, fireMax } = currentDifficulty.current;
     for (let col = 0; col < FORMATION.cols; col++) {
@@ -350,14 +401,52 @@ export function Scene() {
   }
 
   /**
+   * Moves block `i` into tier mesh `newTier` (0/1/2 = healthy/damaged/
+   * critical, matching ShieldTierMeshes' order) — hidden (scaled to zero)
+   * in whichever tier it's leaving, shown with its real transform in the
+   * one it's entering. Also used to just (re-)show a block in its current
+   * tier (oldTier === newTier is a harmless no-op on the "leaving" side).
+   */
+  function moveShieldBlockToTier(i: number, newTier: number) {
+    const tiers = shieldMeshRef.current;
+    if (!tiers) return;
+    const tierMeshes = [tiers.healthy, tiers.damaged, tiers.critical];
+    const oldTier = shieldBlockTier.current[i];
+    if (oldTier !== newTier) {
+      const oldMesh = tierMeshes[oldTier];
+      if (oldMesh) {
+        setShieldInstance(oldMesh, i, null);
+        oldMesh.instanceMatrix.needsUpdate = true;
+      }
+    }
+    const newMesh = tierMeshes[newTier];
+    if (newMesh) {
+      setShieldInstance(newMesh, i, shieldLayout[i], shieldRotations[i]);
+      newMesh.instanceMatrix.needsUpdate = true;
+    }
+    shieldBlockTier.current[i] = newTier;
+  }
+
+  /** Hides block `i` (destroyed) in whichever tier mesh it currently lives in. */
+  function hideShieldBlock(i: number) {
+    const tiers = shieldMeshRef.current;
+    if (!tiers) return;
+    const tierMeshes = [tiers.healthy, tiers.damaged, tiers.critical];
+    const mesh = tierMeshes[shieldBlockTier.current[i]];
+    if (mesh) {
+      setShieldInstance(mesh, i, null);
+      mesh.instanceMatrix.needsUpdate = true;
+    }
+  }
+
+  /**
    * Absorbs a shot — from either side, same as the arcade original — into
    * whichever alive shield block it's touching. Returns true (and consumes
    * that block) on a hit, so the caller knows to stop the bolt there instead
    * of letting it continue toward the ship or the wave.
    */
   function tryHitShield(x: number, y: number, z: number): boolean {
-    const mesh = shieldMeshRef.current;
-    if (!mesh) return false;
+    if (!shieldMeshRef.current) return false;
     for (let i = 0; i < shieldLayout.length; i++) {
       if (!shieldAlive.current[i]) continue;
       const [bx, by, bz] = shieldLayout[i];
@@ -366,8 +455,21 @@ export function Scene() {
       const dz = z - bz;
       if (dx * dx + dy * dy + dz * dz <= SHIELD.hitRadius ** 2) {
         shieldAlive.current[i] = false;
-        setShieldInstance(mesh, i, null);
-        mesh.instanceMatrix.needsUpdate = true;
+        hideShieldBlock(i);
+
+        // A hit changes the WHOLE bunker's tier (by its new remaining
+        // fraction), not just the block that got hit — every other
+        // still-alive block in this bunker needs to move tiers with it.
+        const bunkerIndex = Math.floor(i / blocksPerShield);
+        shieldBunkerAlive.current[bunkerIndex] -= 1;
+        const fraction = shieldBunkerAlive.current[bunkerIndex] / blocksPerShield;
+        const tier = shieldTierForFraction(fraction);
+        const start = bunkerIndex * blocksPerShield;
+        for (let j = start; j < start + blocksPerShield; j++) {
+          if (!shieldAlive.current[j]) continue;
+          moveShieldBlockToTier(j, tier);
+        }
+
         return true;
       }
     }
@@ -382,8 +484,8 @@ export function Scene() {
   function spawnPickup(position: THREE.Vector3) {
     if (Math.random() >= PICKUP.dropChance) return;
     const slot = pickups.current.find((p) => !p.active);
-    const mesh = slot?.ref.current;
-    if (!slot || !mesh) return;
+    const group = slot?.ref.current;
+    if (!slot || !group) return;
 
     slot.active = true;
     slot.age = 0;
@@ -394,10 +496,16 @@ export function Scene() {
       slot.weaponKind = Math.random() < 0.5 ? "spread" : "rapid";
     }
 
-    mesh.visible = true;
-    mesh.position.copy(position);
-    const mat = mesh.material as THREE.MeshBasicMaterial;
-    mat.color.set(slot.kind === "health" ? COLORS.pickupHealth : COLORS.pickupWeapon);
+    group.visible = true;
+    group.position.copy(position);
+    group.scale.setScalar(PICKUP.visualScale);
+    // Both variants live under the same pooled group (see Pickup.tsx) —
+    // toggle which one shows rather than mutating a shared material color,
+    // since health/weapon now differ in actual shape, not just tint.
+    const healthVisual = group.getObjectByName("health-visual");
+    const weaponVisual = group.getObjectByName("weapon-visual");
+    if (healthVisual) healthVisual.visible = slot.kind === "health";
+    if (weaponVisual) weaponVisual.visible = slot.kind === "weapon";
   }
 
   useFrame((_state, rawDelta) => {
@@ -443,6 +551,12 @@ export function Scene() {
           weaponRef,
           pickupsRef: pickups.current,
           playerBoltsRef: playerBolts.current,
+          enemyBoltsRef: enemyBolts.current,
+          shieldLayoutRef: shieldLayout,
+          shieldAliveArr: shieldAlive.current,
+          shieldMeshRef: shieldMeshRef.current,
+          blocksPerShield,
+          tryHitShieldDebug: tryHitShield,
         };
       }
 
@@ -505,13 +619,22 @@ export function Scene() {
         // outright and tells us whether one was left to spend.
         const survived = useGameStore.getState().handleInvasion();
         if (survived) {
-          // A life remained: throw the player back into a fresh attempt at
-          // this same wave. Just healing/respawning the ship in place would
-          // leave the formation sitting exactly where it already broke
-          // through, re-triggering this same check the very next frame.
+          // A life remained: push the wave back to its starting depth and
+          // respawn the ship, but touch NOTHING else — enemies already
+          // killed stay dead, shield damage stays, ammo in flight keeps
+          // flying. Just healing/respawning the ship in place (formation
+          // untouched) would leave it sitting exactly where it already
+          // broke through, re-triggering this same check next frame, so
+          // the formation has to move — but a FULL spawnWave (fresh 40
+          // enemies, repaired shields) was needlessly punishing: it wiped
+          // out real progress on the wave for a mistake that cost a life
+          // already. Resetting simTime re-derives both the formation's z
+          // (startZ + simTime*advanceSpeed) and its sway phase back to a
+          // clean starting position.
           ship.position.set(0, (ARENA.minY + ARENA.maxY) / 2, ARENA.shipZ);
           ship.rotation.set(0, 0, 0);
-          spawnWave(formation, useGameStore.getState().wave);
+          formation.position.set(0, 0, FORMATION.startZ);
+          simTime.current = 0;
         }
       }
 
@@ -762,13 +885,13 @@ export function Scene() {
       </group>
 
       {playerBolts.current.refs.map((ref, i) => (
-        <Projectile key={`p${i}`} ref={ref} color={COLORS.phosphor} />
+        <Projectile key={`p${i}`} ref={ref as React.RefObject<THREE.Mesh>} color={COLORS.phosphor} />
       ))}
       {enemyBolts.current.refs.map((ref, i) => (
-        <Projectile key={`e${i}`} ref={ref} color={COLORS.enemyBolt} />
+        <EnemyBolt key={`e${i}`} ref={ref as React.RefObject<THREE.Group>} />
       ))}
       {pickups.current.map((p, i) => (
-        <Pickup key={`pk${i}`} ref={p.ref as React.RefObject<THREE.Mesh>} />
+        <Pickup key={`pk${i}`} ref={p.ref as React.RefObject<THREE.Group>} />
       ))}
 
       <Explosions ref={explosions.ref} />

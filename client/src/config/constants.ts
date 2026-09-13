@@ -93,6 +93,13 @@ export const PICKUP = {
   radius: 1.05, // catch distance (ship <-> capsule)
   lifetime: 9, // seconds before an uncaught capsule despawns
   healthRestore: 30,
+  // Pickup.tsx's own geometry (0.42-radius shell) is already a bit bigger
+  // than a bolt, but not by enough to read as "a different kind of object
+  // in the world" at a glance next to the ship's thin 0.05-radius beam or
+  // the enemy's ~0.16-radius plasma glob — this scales the whole spawned
+  // group up further so a capsule is unmistakably a pickup, not just
+  // another shot flying past.
+  visualScale: 1.7,
 };
 
 // Temporary alternate fire modes granted by a weapon-crate pickup — revert
@@ -195,6 +202,19 @@ export const SHIELD = {
   pattern: Array.from({ length: SHIELD_ROWS }, (_, row) =>
     row >= SHIELD_ROWS - 2 ? [1, 1, 0, 1, 1] : [1, 1, 1, 1, 1],
   ),
+};
+
+// Each bunker's wall glow tints toward this scale by its OWN remaining
+// block fraction (not a global average across all 4) — a glance at any one
+// shield tells you how much protection it still has left, instead of a
+// fixed color that reads identically whether it's untouched or one hit from
+// gone. "damaged" reuses the same amber as the ship's own critical-health
+// tint (hud.css) — one consistent "getting dangerous" color across the HUD
+// and the 3D scene, rather than two different unrelated warning hues.
+export const SHIELD_HEALTH_COLORS = {
+  healthy: COLORS.phosphor, // > 66% of this bunker's blocks remain
+  damaged: "#e2a23f", // > 33% remain
+  critical: "#ff4d4d", // <= 33% remain
 };
 
 export const HIT_RADIUS = {
