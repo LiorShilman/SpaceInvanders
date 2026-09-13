@@ -14,10 +14,12 @@ import { Explosions, useExplosions } from "./Explosions";
 import { AimLine, LockReticle, AIM_LINE_LENGTH } from "./Sight";
 
 // How close (in x/y only, ignoring depth) an enemy needs to be to the ship's
-// current firing lane before the lock reticle latches onto it — generous
-// relative to HIT_RADIUS since jitter means enemies aren't grid-perfect, and
-// this is a "you're roughly lined up" cue, not a hit guarantee.
-const LOCK_RADIUS = 1.0;
+// current firing lane before the lock reticle latches onto it. Must be <=
+// HIT_RADIUS.playerProjectileVsEnemy — it was 1.0 against a 0.75 hit radius,
+// so the reticle could show "locked on" in the 0.75-1.0 gap where shots
+// fired right now would still whiff. A "locked" reticle should be a promise
+// that firing this instant lands, not just "roughly lined up."
+const LOCK_RADIUS = HIT_RADIUS.playerProjectileVsEnemy;
 
 const ENEMY_COUNT = FORMATION.rows * FORMATION.cols;
 
@@ -64,11 +66,13 @@ type WaveShape = (row: number, col: number) => boolean;
 const WAVE_SHAPES: WaveShape[] = [
   // Full block — the classic wave.
   () => true,
-  // Wedge: a narrow point facing the ship (row 0), flaring out toward the
-  // back rows.
+  // Wedge: a narrower point facing the ship (row 0), flaring out toward the
+  // back rows — kept from getting too sparse overall (was 22/40; tuning
+  // aims every shape at roughly 30-40 now, not 20-40, so the "harder wave,
+  // fewer targets" contrast doesn't read as the wave getting easier).
   (row, col) => {
     const center = (FORMATION.cols - 1) / 2;
-    const halfWidth = (row / (FORMATION.rows - 1)) * center + 0.6;
+    const halfWidth = (row / (FORMATION.rows - 1)) * center * 0.6 + 1.8;
     return Math.abs(col - center) <= halfWidth;
   },
   // Diamond.
@@ -76,21 +80,23 @@ const WAVE_SHAPES: WaveShape[] = [
     const centerRow = (FORMATION.rows - 1) / 2;
     const centerCol = (FORMATION.cols - 1) / 2;
     const dist = Math.abs(row - centerRow) / centerRow + Math.abs(col - centerCol) / centerCol;
-    return dist <= 1.15;
+    return dist <= 1.5;
   },
   // Twin clusters, split by a gap down the middle.
   (_row, col) => {
     const centerCol = (FORMATION.cols - 1) / 2;
     return Math.abs(col - centerCol) >= 1.1;
   },
-  // Ring — a hollow center.
+  // Ring — a hollow center. Widened outward (not shrunk inward) to gain
+  // enemies without losing the hole — a smaller inner radius on a 5-row
+  // grid barely excludes anything and stops reading as a ring at all.
   (row, col) => {
     const centerRow = (FORMATION.rows - 1) / 2;
     const centerCol = (FORMATION.cols - 1) / 2;
     const dx = (col - centerCol) / centerCol;
     const dy = (row - centerRow) / centerRow;
     const dist = Math.sqrt(dx * dx + dy * dy);
-    return dist >= 0.45 && dist <= 1.05;
+    return dist >= 0.5 && dist <= 1.3;
   },
 ];
 
