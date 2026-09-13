@@ -43,7 +43,11 @@ export const PROJECTILE = {
   playerSpeed: 22,
   enemySpeed: 10,
   playerDamage: 1, // one hit kills a Grunt (health = 1)
-  enemyDamage: 12,
+  // Was 12 (needing ~8 hits to die) — with shields now blocking a real
+  // share of incoming fire, so few enemy bolts were reaching the ship at
+  // all that health barely moved. Raised so the hits that do land actually
+  // matter: ~4-5 now kill.
+  enemyDamage: 22,
   poolSize: 80,
 };
 

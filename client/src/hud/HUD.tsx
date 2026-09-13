@@ -26,7 +26,9 @@ export function HUD({ anaglyph, onToggleAnaglyph }: HUDProps) {
     <div className="hud">
       <div className="hud-bar">
         <div className="hud-stat">
-          <span className="hud-label">מגן</span>
+          <span className="hud-label">
+            כוח <span className="hud-label-value">{healthPct}%</span>
+          </span>
           <div className="health-track">
             <div
               className="health-fill"

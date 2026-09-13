@@ -34,6 +34,13 @@
   text-shadow: 0 0 6px rgba(0, 0, 0, 0.8);
 }
 
+.hud-label-value {
+  font-family: "Consolas", monospace;
+  font-size: 11px;
+  color: #57e089;
+  letter-spacing: 0;
+}
+
 .hud-value {
   font-family: "Consolas", monospace;
   font-size: 18px;
@@ -43,7 +50,7 @@
 
 .health-track {
   width: 180px;
-  height: 10px;
+  height: 16px;
   border: 1px solid #2f6b48;
   background: rgba(10, 13, 10, 0.7);
   border-radius: 3px;
@@ -52,8 +59,8 @@
 
 .health-fill {
   height: 100%;
-  background: #57e089;
-  box-shadow: 0 0 10px rgba(87, 224, 137, 0.7);
+  background: linear-gradient(90deg, #2f6b48, #57e089);
+  box-shadow: 0 0 12px rgba(87, 224, 137, 0.8);
   transition: width 0.15s ease-out;
 }
 
