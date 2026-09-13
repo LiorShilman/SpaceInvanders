@@ -91,7 +91,7 @@ export function HUD({ anaglyph, onToggleAnaglyph }: HUDProps) {
       )}
 
       <div className="hud-controls">
-        WASD / חצים — תנועה &nbsp;·&nbsp; רווח — ירי
+        <span>WASD / חצים — תנועה &nbsp;·&nbsp; Q/E — קדימה/אחורה &nbsp;·&nbsp; רווח — ירי</span>
       </div>
     </div>
   );

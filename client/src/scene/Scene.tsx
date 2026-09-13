@@ -11,7 +11,7 @@ import { Shields } from "./Shields";
 import { Starfield } from "./Starfield";
 import { Nebula } from "./Nebula";
 import { Explosions, useExplosions } from "./Explosions";
-import { AimLine, LockReticle, AIM_LINE_CENTER_Z } from "./Sight";
+import { AimLine, LockReticle, AIM_LINE_LENGTH } from "./Sight";
 
 // How close (in x/y only, ignoring depth) an enemy needs to be to the ship's
 // current firing lane before the lock reticle latches onto it — generous
@@ -71,19 +71,31 @@ function buildShieldLayout(): [number, number, number][] {
 }
 
 // Reused across calls — setMatrixAt only reads it synchronously, so one
-// shared instance avoids allocating a THREE.Matrix4 per shield hit/reset.
-const _shieldMatrix = new THREE.Matrix4();
+// shared object avoids allocating a THREE.Object3D per shield hit/reset.
+const _shieldDummy = new THREE.Object3D();
 
 /** Shows or hides one shield instance (destroyed blocks scale to zero —
- * instancedMesh has no per-instance visibility flag). Caller must set
- * `mesh.instanceMatrix.needsUpdate = true` after a batch of these. */
-function setShieldInstance(mesh: THREE.InstancedMesh, i: number, pos: [number, number, number] | null) {
+ * instancedMesh has no per-instance visibility flag). `rotation` gives each
+ * block its own fixed tilt so the wall doesn't read as a uniform grid of
+ * identical crystals; irrelevant (and omittable) when hiding. Caller must
+ * set `mesh.instanceMatrix.needsUpdate = true` after a batch of these. */
+function setShieldInstance(
+  mesh: THREE.InstancedMesh,
+  i: number,
+  pos: [number, number, number] | null,
+  rotation?: [number, number, number],
+) {
   if (pos) {
-    _shieldMatrix.makeTranslation(pos[0], pos[1], pos[2]);
+    _shieldDummy.position.set(pos[0], pos[1], pos[2]);
+    _shieldDummy.rotation.set(rotation?.[0] ?? 0, rotation?.[1] ?? 0, rotation?.[2] ?? 0);
+    _shieldDummy.scale.set(1, 1, 1);
   } else {
-    _shieldMatrix.makeScale(0, 0, 0);
+    _shieldDummy.position.set(0, 0, 0);
+    _shieldDummy.rotation.set(0, 0, 0);
+    _shieldDummy.scale.set(0, 0, 0);
   }
-  mesh.setMatrixAt(i, _shieldMatrix);
+  _shieldDummy.updateMatrix();
+  mesh.setMatrixAt(i, _shieldDummy.matrix);
 }
 
 /** Per-wave difficulty: wave 1 is exactly the FORMATION baseline. */
@@ -136,6 +148,14 @@ export function Scene() {
   const layout = useMemo(buildFormationLayout, []);
 
   const shieldLayout = useMemo(buildShieldLayout, []);
+  // One fixed random tilt per block, generated once — see setShieldInstance.
+  const shieldRotations = useMemo(
+    () =>
+      shieldLayout.map(
+        () => [Math.random() * Math.PI, Math.random() * Math.PI, Math.random() * Math.PI] as [number, number, number],
+      ),
+    [shieldLayout],
+  );
   const shieldMeshRef = useRef<THREE.InstancedMesh>(null);
   const shieldAlive = useRef<boolean[]>(Array.from({ length: shieldLayout.length }, () => true));
 
@@ -190,7 +210,7 @@ export function Scene() {
     const shieldMesh = shieldMeshRef.current;
     for (let i = 0; i < shieldLayout.length; i++) {
       shieldAlive.current[i] = true;
-      if (shieldMesh) setShieldInstance(shieldMesh, i, shieldLayout[i]);
+      if (shieldMesh) setShieldInstance(shieldMesh, i, shieldLayout[i], shieldRotations[i]);
     }
     if (shieldMesh) shieldMesh.instanceMatrix.needsUpdate = true;
 
@@ -271,15 +291,22 @@ export function Scene() {
       const move = new THREE.Vector3(
         (input.current.right ? 1 : 0) - (input.current.left ? 1 : 0),
         (input.current.up ? 1 : 0) - (input.current.down ? 1 : 0),
-        0,
+        // Q/E: real forward/back piloting, not just an X/Y plane. Forward
+        // (-Z) is toward the wave.
+        (input.current.backward ? 1 : 0) - (input.current.forward ? 1 : 0),
       );
       if (move.lengthSq() > 0) {
         ship.position.x += move.x * SHIP.speed * delta;
         ship.position.y += move.y * SHIP.speed * delta;
+        ship.position.z += move.z * SHIP.speed * delta;
         ship.position.x = THREE.MathUtils.clamp(ship.position.x, -ARENA.halfWidth, ARENA.halfWidth);
         ship.position.y = THREE.MathUtils.clamp(ship.position.y, ARENA.minY, ARENA.maxY);
+        ship.position.z = THREE.MathUtils.clamp(ship.position.z, ARENA.minZ, ARENA.maxZ);
       }
       ship.rotation.z = THREE.MathUtils.lerp(ship.rotation.z, -move.x * 0.35, 0.15);
+      // A slight forward pitch when diving in, back pitch when pulling out —
+      // one more piece of "this is a real cockpit," not a flat plane sled.
+      ship.rotation.x = THREE.MathUtils.lerp(ship.rotation.x, move.z * 0.2, 0.15);
 
       // --- player firing ---------------------------------------------------
       fireCooldown.current -= delta;
@@ -305,7 +332,13 @@ export function Scene() {
       // perspective makes eyeballing "what am I even under" from the ship's
       // screen position alone unreliable — this draws the real answer.
       if (aimLineRef.current) {
-        aimLineRef.current.position.set(ship.position.x, ship.position.y, AIM_LINE_CENTER_Z);
+        // Spans from the ship's own (now movable, Q/E) z down past the
+        // formation's furthest possible start — recomputed every frame
+        // since the ship's z is no longer fixed.
+        const farZ = FORMATION.startZ - 10;
+        const nearZ = ship.position.z;
+        aimLineRef.current.position.set(ship.position.x, ship.position.y, (nearZ + farZ) / 2);
+        aimLineRef.current.scale.y = (nearZ - farZ) / AIM_LINE_LENGTH;
       }
       if (lockReticleRef.current) {
         let lockedEnemy = -1;
@@ -422,7 +455,10 @@ export function Scene() {
         if (!mesh) continue;
         mesh.position.z += enemyBolts.current.dir * enemyBolts.current.speed * delta;
 
-        if (mesh.position.z > ARENA.shipZ + 6) {
+        // Tracks the ship's current z (it now moves fore/aft via Q/E), not
+        // the fixed spawn constant — otherwise this cull point drifts out of
+        // sync with wherever the ship actually is.
+        if (mesh.position.z > ship.position.z + 6) {
           enemyBolts.current.active[i] = false;
           mesh.visible = false;
           continue;
@@ -492,7 +528,7 @@ export function Scene() {
         <Projectile key={`p${i}`} ref={ref} color={COLORS.phosphor} />
       ))}
       {enemyBolts.current.refs.map((ref, i) => (
-        <Projectile key={`e${i}`} ref={ref} color={COLORS.amber} />
+        <Projectile key={`e${i}`} ref={ref} color={COLORS.enemyBolt} />
       ))}
 
       <Explosions ref={explosions.ref} />

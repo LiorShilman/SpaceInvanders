@@ -5,6 +5,8 @@ export interface InputState {
   right: boolean;
   up: boolean;
   down: boolean;
+  forward: boolean;
+  backward: boolean;
   fire: boolean;
 }
 
@@ -17,6 +19,10 @@ const KEY_MAP: Record<string, keyof InputState> = {
   KeyW: "up",
   ArrowDown: "down",
   KeyS: "down",
+  // Real Z-axis piloting, not just an X/Y plane — a separate pair of keys
+  // since up/down (Y) is already spoken for aiming at different rows.
+  KeyQ: "forward",
+  KeyE: "backward",
   Space: "fire",
 };
 
@@ -30,6 +36,8 @@ export function useKeyboard(): React.RefObject<InputState> {
     right: false,
     up: false,
     down: false,
+    forward: false,
+    backward: false,
     fire: false,
   });
 

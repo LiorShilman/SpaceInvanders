@@ -1,6 +1,6 @@
 import { forwardRef } from "react";
 import * as THREE from "three";
-import { COLORS, SHIELD } from "../config/constants";
+import { COLORS } from "../config/constants";
 
 interface ShieldsProps {
   count: number;
@@ -18,8 +18,12 @@ export const Shields = forwardRef<THREE.InstancedMesh, ShieldsProps>(function Sh
   ref,
 ) {
   return (
+    // A faceted crystal, not a cube — reads as an energy-barrier formation
+    // rather than concrete blocks. Each instance also gets a small random
+    // rotation (baked into its transform in Scene) so the wall doesn't look
+    // like a rigid, uniform grid of identical squares.
     <instancedMesh ref={ref} args={[undefined, undefined, count]} frustumCulled={false}>
-      <boxGeometry args={[SHIELD.blockSize, SHIELD.blockSize, SHIELD.blockSize]} />
+      <icosahedronGeometry args={[0.27, 0]} />
       <meshStandardMaterial
         color={COLORS.hull}
         emissive={COLORS.phosphorDim}

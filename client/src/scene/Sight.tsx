@@ -2,11 +2,10 @@ import { forwardRef } from "react";
 import * as THREE from "three";
 import { COLORS } from "../config/constants";
 
-// Fixed length covering the whole playable range (ship at z=8 down past the
-// formation's furthest start at z=-32) — only position.x/y need updating
-// each frame to track the ship, since the line's own z-span never changes.
+// The geometry's own baked-in length — Scene rescales (scale.y) and
+// repositions this every frame to span from the ship's current z (now
+// movable via Q/E) down past the formation's furthest start.
 export const AIM_LINE_LENGTH = 50;
-export const AIM_LINE_CENTER_Z = -17;
 
 /**
  * A real 3D laser-sight line along the ship's exact firing lane (constant

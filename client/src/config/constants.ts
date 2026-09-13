@@ -12,6 +12,10 @@ export const COLORS = {
   // instead of two muted warm tones competing.
   amber: "#ff2e63",
   amberDim: "#6b0f30",
+  // Enemy weapon fire: was the same amber as their own body/eye/ring — no
+  // way to visually tell "enemy" from "enemy's shot" apart at a glance. A
+  // hot orange keeps the same warm/hostile family without being identical.
+  enemyBolt: "#ff8c3d",
   text: "#d9e5d1",
   hull: "#2a3230",
   hullDark: "#171c1a",
@@ -30,7 +34,14 @@ export const ARENA = {
   halfWidth: 13,
   minY: 0.5,
   maxY: 9.9,
-  shipZ: 8,
+  shipZ: 8, // default spawn depth
+  // Real forward/back piloting range (Q/E), not just an X/Y plane. Closer
+  // (toward minZ) shortens bolt travel time — easier to lead the swaying
+  // formation — at the cost of less reaction time to incoming fire; minZ
+  // stays a little above the shields (z=3) and the invade line (z=5) so
+  // standing at the limit doesn't feel like clipping into either.
+  minZ: 6,
+  maxZ: 13,
 } as const;
 
 export const SHIP = {
