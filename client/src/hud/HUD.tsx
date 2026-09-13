@@ -144,7 +144,7 @@ export function HUD({ anaglyph, onToggleAnaglyph }: HUDProps) {
       <div className="hud-controls">
         <span className="hud-controls-pill">
           <span dir="ltr">WASD</span> / חצים — תנועה &nbsp;·&nbsp; <span dir="ltr">Z/C</span> — קדימה/אחורה
-          &nbsp;·&nbsp; רווח — ירי
+          &nbsp;·&nbsp; רווח / עכבר שמאלי — ירי
         </span>
       </div>
     </div>

@@ -14,7 +14,7 @@ import {
   WEAPON,
 } from "../config/constants";
 import { useGameStore, type WeaponKind } from "../state/gameStore";
-import { useKeyboard } from "../hooks/useKeyboard";
+import { useInput } from "../hooks/useInput";
 import { Ship } from "./Ship";
 import { Enemies, type EnemiesHandle } from "./Enemies";
 import { Projectile } from "./Projectile";
@@ -252,7 +252,7 @@ function makePickupPool(size: number): PickupSlot[] {
 }
 
 export function Scene() {
-  const input = useKeyboard();
+  const input = useInput();
   const { camera } = useThree();
 
   const shipRef = useRef<THREE.Group>(null);

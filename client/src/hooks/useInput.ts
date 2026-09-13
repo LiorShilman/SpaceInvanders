@@ -29,10 +29,12 @@ const KEY_MAP: Record<string, keyof InputState> = {
 };
 
 /**
- * Tracks pressed keys in a mutable ref so the render loop (useFrame) can read
- * input every frame without triggering React re-renders on every keystroke.
+ * Tracks pressed keys AND the left mouse button in a mutable ref so the
+ * render loop (useFrame) can read input every frame without triggering
+ * React re-renders on every keystroke/click. (Formerly useKeyboard — renamed
+ * once mouse fire was added, since "keyboard" stopped being accurate.)
  */
-export function useKeyboard(): React.RefObject<InputState> {
+export function useInput(): React.RefObject<InputState> {
   const state = useRef<InputState>({
     left: false,
     right: false,
@@ -56,11 +58,34 @@ export function useKeyboard(): React.RefObject<InputState> {
       state.current[key] = false;
     };
 
+    // Left mouse button also fires — but only when the click actually
+    // starts on the canvas itself, not on an overlaid HUD control (the
+    // anaglyph toggle, "שחק שוב"). Those buttons don't call
+    // stopPropagation(), so a plain window-level listener would otherwise
+    // also arm "fire" on every click of them.
+    const onMouseDown = (e: MouseEvent) => {
+      if (e.button !== 0) return;
+      if (!(e.target instanceof HTMLCanvasElement)) return;
+      e.preventDefault();
+      state.current.fire = true;
+    };
+    // No target check on release — if the pointer left the canvas (or a
+    // HUD button) before releasing, firing still needs to stop, or it gets
+    // stuck on until the next unrelated click.
+    const onMouseUp = (e: MouseEvent) => {
+      if (e.button !== 0) return;
+      state.current.fire = false;
+    };
+
     window.addEventListener("keydown", onKeyDown);
     window.addEventListener("keyup", onKeyUp);
+    window.addEventListener("mousedown", onMouseDown);
+    window.addEventListener("mouseup", onMouseUp);
     return () => {
       window.removeEventListener("keydown", onKeyDown);
       window.removeEventListener("keyup", onKeyUp);
+      window.removeEventListener("mousedown", onMouseDown);
+      window.removeEventListener("mouseup", onMouseUp);
     };
   }, []);
 
