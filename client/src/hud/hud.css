@@ -48,6 +48,12 @@
   text-shadow: 0 0 8px rgba(87, 224, 137, 0.6);
 }
 
+.hud-value--mono {
+  font-variant-numeric: tabular-nums;
+  direction: ltr;
+  display: inline-block;
+}
+
 .health-track {
   width: 180px;
   height: 16px;

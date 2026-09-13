@@ -7,7 +7,7 @@ import { useKeyboard } from "../hooks/useKeyboard";
 import { Ship } from "./Ship";
 import { Enemy } from "./Enemy";
 import { Projectile } from "./Projectile";
-import { ShieldBlock } from "./ShieldBlock";
+import { Shields } from "./Shields";
 import { Starfield } from "./Starfield";
 import { Nebula } from "./Nebula";
 import { Explosions, useExplosions } from "./Explosions";
@@ -70,6 +70,22 @@ function buildShieldLayout(): [number, number, number][] {
   return blocks;
 }
 
+// Reused across calls — setMatrixAt only reads it synchronously, so one
+// shared instance avoids allocating a THREE.Matrix4 per shield hit/reset.
+const _shieldMatrix = new THREE.Matrix4();
+
+/** Shows or hides one shield instance (destroyed blocks scale to zero —
+ * instancedMesh has no per-instance visibility flag). Caller must set
+ * `mesh.instanceMatrix.needsUpdate = true` after a batch of these. */
+function setShieldInstance(mesh: THREE.InstancedMesh, i: number, pos: [number, number, number] | null) {
+  if (pos) {
+    _shieldMatrix.makeTranslation(pos[0], pos[1], pos[2]);
+  } else {
+    _shieldMatrix.makeScale(0, 0, 0);
+  }
+  mesh.setMatrixAt(i, _shieldMatrix);
+}
+
 /** Per-wave difficulty: wave 1 is exactly the FORMATION baseline. */
 function waveDifficulty(wave: number) {
   const growth = Math.pow(WAVE_SCALING.advanceSpeedGrowth, wave - 1);
@@ -123,10 +139,7 @@ export function Scene() {
   const layout = useMemo(buildFormationLayout, []);
 
   const shieldLayout = useMemo(buildShieldLayout, []);
-  const shieldRefs = useMemo(
-    () => Array.from({ length: shieldLayout.length }, () => createRef<THREE.Mesh>()),
-    [shieldLayout.length],
-  );
+  const shieldMeshRef = useRef<THREE.InstancedMesh>(null);
   const shieldAlive = useRef<boolean[]>(Array.from({ length: shieldLayout.length }, () => true));
 
   const enemyAlive = useRef<boolean[]>(Array.from({ length: ENEMY_COUNT }, () => true));
@@ -178,11 +191,12 @@ export function Scene() {
     }
     aliveCount.current = ENEMY_COUNT;
 
+    const shieldMesh = shieldMeshRef.current;
     for (let i = 0; i < shieldLayout.length; i++) {
       shieldAlive.current[i] = true;
-      const mesh = shieldRefs[i].current;
-      if (mesh) mesh.visible = true;
+      if (shieldMesh) setShieldInstance(shieldMesh, i, shieldLayout[i]);
     }
+    if (shieldMesh) shieldMesh.instanceMatrix.needsUpdate = true;
 
     const { fireMin, fireMax } = currentDifficulty.current;
     for (let col = 0; col < FORMATION.cols; col++) {
@@ -209,6 +223,8 @@ export function Scene() {
    * of letting it continue toward the ship or the wave.
    */
   function tryHitShield(x: number, y: number, z: number): boolean {
+    const mesh = shieldMeshRef.current;
+    if (!mesh) return false;
     for (let i = 0; i < shieldLayout.length; i++) {
       if (!shieldAlive.current[i]) continue;
       const [bx, by, bz] = shieldLayout[i];
@@ -217,8 +233,8 @@ export function Scene() {
       const dz = z - bz;
       if (dx * dx + dy * dy + dz * dz <= SHIELD.hitRadius ** 2) {
         shieldAlive.current[i] = false;
-        const mesh = shieldRefs[i].current;
-        if (mesh) mesh.visible = false;
+        setShieldInstance(mesh, i, null);
+        mesh.instanceMatrix.needsUpdate = true;
         return true;
       }
     }
@@ -470,9 +486,7 @@ export function Scene() {
       <AimLine ref={aimLineRef} />
       <LockReticle ref={lockReticleRef} />
 
-      {shieldLayout.map((pos, i) => (
-        <ShieldBlock key={i} ref={shieldRefs[i]} position={pos} />
-      ))}
+      <Shields ref={shieldMeshRef} count={shieldLayout.length} />
 
       <group ref={formationRef} position={[0, 0, FORMATION.startZ]}>
         <pointLight color={COLORS.amber} intensity={3} distance={14} position={[0, 3.7, 1]} />

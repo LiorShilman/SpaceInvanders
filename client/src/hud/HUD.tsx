@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { useGameStore } from "../state/gameStore";
 import { SHIP } from "../config/constants";
 import "./hud.css";
@@ -8,11 +8,29 @@ interface HUDProps {
   onToggleAnaglyph: () => void;
 }
 
+function formatClock(ms: number): string {
+  const totalSeconds = Math.max(0, Math.floor(ms / 1000));
+  const m = Math.floor(totalSeconds / 60);
+  const s = totalSeconds % 60;
+  return `${m}:${s.toString().padStart(2, "0")}`;
+}
+
 export function HUD({ anaglyph, onToggleAnaglyph }: HUDProps) {
-  const { status, health, score, wave, enemiesRemaining, bannerText, reset, clearBanner } =
+  const { status, health, score, wave, enemiesRemaining, bannerText, runStartedAt, reset, clearBanner } =
     useGameStore();
 
   const healthPct = Math.round((health / SHIP.maxHealth) * 100);
+
+  // Real wall-clock elapsed time (not the simulation's own clock — see the
+  // note on runStartedAt in gameStore) — ticks every second on its own,
+  // independent of the game's frame rate.
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    if (status !== "playing") return;
+    const interval = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(interval);
+  }, [status]);
+  const elapsed = formatClock(now - runStartedAt);
 
   // The wave-cleared banner is transient — it clears itself a couple of
   // seconds after appearing, rather than needing a dismiss button.
@@ -44,6 +62,10 @@ export function HUD({ anaglyph, onToggleAnaglyph }: HUDProps) {
         <div className="hud-stat hud-stat--num">
           <span className="hud-label">גל {wave}</span>
           <span className="hud-value">{enemiesRemaining} נותרו</span>
+        </div>
+        <div className="hud-stat hud-stat--num">
+          <span className="hud-label">זמן</span>
+          <span className="hud-value hud-value--mono">{elapsed}</span>
         </div>
         <button className="anaglyph-toggle" onClick={onToggleAnaglyph} data-active={anaglyph}>
           🔴🔵 {anaglyph ? "תלת-ממד פעיל — כיבוי" : "משקפי אדום-כחול (3)"}

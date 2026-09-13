@@ -13,6 +13,11 @@ interface GameState {
   wave: number;
   enemiesRemaining: number;
   bannerText: string | null;
+  // Wall-clock timestamp (Date.now()), deliberately NOT the frame-accumulated
+  // sim clock — the HUD timer should show real elapsed time even if the
+  // simulation itself is running slow (heavy scene / low frame rate), so a
+  // player can actually notice that mismatch instead of it being invisible.
+  runStartedAt: number;
   damageShip: (amount: number) => void;
   addScore: (points: number) => void;
   setEnemiesRemaining: (count: number) => void;
@@ -28,6 +33,7 @@ const initial = {
   wave: 1,
   enemiesRemaining: 0,
   bannerText: null as string | null,
+  runStartedAt: Date.now(),
 };
 
 export const useGameStore = create<GameState>((set, get) => ({
@@ -51,5 +57,8 @@ export const useGameStore = create<GameState>((set, get) => ({
 
   clearBanner: () => set({ bannerText: null }),
 
-  reset: () => set({ ...initial }),
+  // Reuses `initial` but stamps a fresh start time — reset() can fire long
+  // after module load (every "שחק שוב"), so the frozen initial.runStartedAt
+  // would otherwise make the timer start already stale.
+  reset: () => set({ ...initial, runStartedAt: Date.now() }),
 }));

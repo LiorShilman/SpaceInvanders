@@ -48,7 +48,11 @@ export const PROJECTILE = {
   // all that health barely moved. Raised so the hits that do land actually
   // matter: ~4-5 now kill.
   enemyDamage: 22,
-  poolSize: 80,
+  // Was 80 (x2 pools = 160 meshes) — at most FORMATION.cols (8) enemy shots
+  // and a handful of player shots are ever in flight at once, so this was
+  // pure unused mesh/draw-call overhead. 40 each still leaves generous
+  // headroom.
+  poolSize: 40,
 };
 
 export const FORMATION = {

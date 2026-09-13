@@ -87,36 +87,28 @@ export const Enemy = forwardRef<THREE.Group, { position: [number, number, number
             />
           </mesh>
 
-          {/* Four jointed legs (thigh + shin), swept back so a real
-              silhouette shows past the carapace even from a steep,
-              near-front viewing angle — not hidden radially underneath. */}
+          {/* Four legs, swept back so a real silhouette shows past the
+              carapace even from a steep, near-front viewing angle — not
+              hidden radially underneath. One tapered segment each (was a
+              jointed thigh+shin pair): 40 enemies at 2 leg meshes apiece
+              added up to real mesh-count overhead for a joint that barely
+              read at gameplay distance anyway. */}
           {legs.map(({ side, along, key }) => (
-            <group
+            <mesh
               key={key}
-              position={[side * 0.34, -0.08, along * 0.22]}
-              rotation={[0, side * 0.5, 0]}
+              position={[side * 0.5, -0.18, along * 0.18]}
+              rotation={[0, side * 0.5, side * 1.4]}
             >
-              <mesh position={[side * 0.22, -0.1, along * -0.05]} rotation={[0, 0, side * 1.15]}>
-                <cylinderGeometry args={[0.05, 0.065, 0.42, 5]} />
-                <meshStandardMaterial
-                  color={COLORS.enemyHullDark}
-                  emissive={COLORS.amberDim}
-                  emissiveIntensity={0.3}
-                  metalness={0.5}
-                  roughness={0.55}
-                  flatShading
-                />
-              </mesh>
-              <mesh position={[side * 0.4, -0.32, along * -0.05]} rotation={[0, 0, side * 1.9]}>
-                <cylinderGeometry args={[0.03, 0.05, 0.34, 5]} />
-                <meshStandardMaterial
-                  color={COLORS.enemyHullDark}
-                  metalness={0.5}
-                  roughness={0.6}
-                  flatShading
-                />
-              </mesh>
-            </group>
+              <cylinderGeometry args={[0.05, 0.03, 0.7, 5]} />
+              <meshStandardMaterial
+                color={COLORS.enemyHullDark}
+                emissive={COLORS.amberDim}
+                emissiveIntensity={0.3}
+                metalness={0.5}
+                roughness={0.55}
+                flatShading
+              />
+            </mesh>
           ))}
         </group>
       </group>

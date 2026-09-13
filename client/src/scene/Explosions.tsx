@@ -2,7 +2,10 @@ import { forwardRef, useImperativeHandle, useMemo, useRef } from "react";
 import { useFrame } from "@react-three/fiber";
 import * as THREE from "three";
 
-const POOL_SIZE = 140;
+// Was 140 — plenty more than the scene ever needs concurrently (even rapid
+// player kills rarely overlap more than 3-4 bursts at once) and each one is
+// its own mesh/draw call, so this was pure overhead.
+const POOL_SIZE = 60;
 const PARTICLES_PER_BURST = 14;
 
 interface Particle {
