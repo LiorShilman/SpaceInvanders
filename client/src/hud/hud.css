@@ -70,7 +70,13 @@
 
 .health-fill {
   height: 100%;
-  background: linear-gradient(90deg, #2f6b48, #57e089);
+  /* The fill box anchors to the track's right edge (inherited RTL) and
+     grows leftward as health drops, so its own left edge is the current
+     depleting frontier — that's where the bright glowing tip belongs, not
+     at the static right/full-reference anchor (which was backwards: dim at
+     the frontier, bright sitting still at the anchor no matter how low
+     health got). */
+  background: linear-gradient(90deg, #57e089, #2f6b48);
   box-shadow: 0 0 12px rgba(87, 224, 137, 0.8);
   transition: width 0.15s ease-out;
 }
