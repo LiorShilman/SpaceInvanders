@@ -364,14 +364,17 @@ export function Scene() {
           continue;
         }
 
-        // Shields only stop incoming enemy fire, not the ship's own shots.
-        // Bolts fly in a dead-straight line at whatever height they were
-        // fired from (no arc) and enemy rows sit at fixed heights, so a
-        // shield at any fixed height would otherwise permanently block the
-        // player's own shots at whichever row shares that height — most
-        // painfully the bottom row, since shields sit low. Letting player
-        // fire pass through keeps shields useful as cover without turning
-        // them into a self-imposed ceiling on which rows are reachable.
+        // Symmetric, like the arcade original: the player's own fire erodes
+        // shields too. With only 4 shields spread across 8 columns, half the
+        // columns are always fully open with no shield in the way — the
+        // other half is exactly the original's "shoot a tunnel through your
+        // own bunker" dynamic, not a permanent block.
+        if (tryHitShield(mesh.position.x, mesh.position.y, mesh.position.z)) {
+          playerBolts.current.active[i] = false;
+          mesh.visible = false;
+          continue;
+        }
+
         for (let e = 0; e < ENEMY_COUNT; e++) {
           if (!enemyAlive.current[e]) continue;
           const local = layout[e];

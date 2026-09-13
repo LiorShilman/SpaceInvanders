@@ -83,24 +83,33 @@ export const WAVE_SCALING = {
 };
 
 // Destructible bunkers between the ship and the wave — chip away block by
-// block as they absorb incoming enemy fire. The one piece of the original arcade
-// layout that was missing entirely.
+// block as they absorb incoming enemy fire. The one piece of the original
+// arcade layout that was missing entirely.
+//
+// Enemy bolts travel at a fixed height (the shooting enemy's row — no arc),
+// so a shield only has any chance of intercepting fire from rows whose
+// height it actually spans. A short, arcade-proportioned bunker (4 rows,
+// ~1.3 units tall) only reached row 0 — every other row's fire sailed clean
+// over it, which is why hardly anything seemed to dent the shields. Taller
+// on purpose: tall enough to span rows 0-1, so a meaningful share of enemy
+// fire is interceptable, not just the bottom row's. (This wouldn't have
+// been free before player fire was made to pass through shields — a taller
+// shield back then would have blocked the player's own aim at even more
+// rows. Now it costs nothing.)
+const SHIELD_ROWS = 7;
 export const SHIELD = {
   count: 4,
   cols: 5,
-  rows: 4,
+  rows: SHIELD_ROWS,
   blockSize: 0.42,
   z: 3, // between the ship (8) and the invade line (5)
-  baseY: 1.4,
+  baseY: 1.7,
   hitRadius: 0.34,
-  // 1 = block present. Bottom-middle notch cut out, echoing the arcade
-  // bunkers' eroded silhouette.
-  pattern: [
-    [1, 1, 1, 1, 1],
-    [1, 1, 1, 1, 1],
-    [1, 1, 1, 1, 1],
-    [1, 1, 0, 1, 1],
-  ],
+  // 1 = block present. A notch open at the bottom two rows' middle column,
+  // echoing the arcade bunkers' eroded-tunnel silhouette.
+  pattern: Array.from({ length: SHIELD_ROWS }, (_, row) =>
+    row >= SHIELD_ROWS - 2 ? [1, 1, 0, 1, 1] : [1, 1, 1, 1, 1],
+  ),
 };
 
 export const HIT_RADIUS = {
