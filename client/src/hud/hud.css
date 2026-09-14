@@ -68,15 +68,15 @@
 .hud-label-value {
   font-family: "Consolas", monospace;
   font-size: 11px;
-  color: #57e089;
+  color: #48d1ff;
   letter-spacing: 0;
 }
 
 .hud-value {
   font-family: "Consolas", monospace;
   font-size: 18px;
-  color: #57e089;
-  text-shadow: 0 0 8px rgba(87, 224, 137, 0.6);
+  color: #48d1ff;
+  text-shadow: 0 0 8px rgba(72, 209, 255, 0.6);
 }
 
 .hud-value--weapon {
@@ -93,7 +93,7 @@
    worth a glance being enough to catch, same as score. */
 .hud-value--wave {
   font-size: 22px;
-  text-shadow: 0 0 12px rgba(87, 224, 137, 0.85);
+  text-shadow: 0 0 12px rgba(72, 209, 255, 0.85);
 }
 
 .hud-lives {
@@ -107,8 +107,8 @@
   width: 10px;
   height: 10px;
   border-radius: 50%;
-  background: #57e089;
-  box-shadow: 0 0 6px rgba(87, 224, 137, 0.8);
+  background: #48d1ff;
+  box-shadow: 0 0 6px rgba(72, 209, 255, 0.8);
   flex: none;
 }
 
@@ -116,8 +116,8 @@
   display: inline-block;
   margin-inline-start: 6px;
   font-size: 14px;
-  color: #57e089;
-  text-shadow: 0 0 8px rgba(87, 224, 137, 0.7);
+  color: #48d1ff;
+  text-shadow: 0 0 8px rgba(72, 209, 255, 0.7);
 }
 
 /* Escalating heat as the streak climbs — a x2 reads the same as the score
@@ -147,7 +147,7 @@
 .health-track {
   width: 180px;
   height: 16px;
-  border: 1px solid #2f6b48;
+  border: 1px solid #1c5f73;
   background: rgba(10, 13, 10, 0.7);
   border-radius: 3px;
   overflow: hidden;
@@ -161,8 +161,8 @@
      at the static right/full-reference anchor (which was backwards: dim at
      the frontier, bright sitting still at the anchor no matter how low
      health got). */
-  background: linear-gradient(90deg, #57e089, #2f6b48);
-  box-shadow: 0 0 12px rgba(87, 224, 137, 0.8);
+  background: linear-gradient(90deg, #48d1ff, #1c5f73);
+  box-shadow: 0 0 12px rgba(72, 209, 255, 0.8);
   transition: width 0.15s ease-out;
 }
 
@@ -189,7 +189,7 @@
   font-size: 12px;
   color: #d9e5d1;
   background: rgba(16, 21, 14, 0.85);
-  border: 1px solid #2f6b48;
+  border: 1px solid #1c5f73;
   border-radius: 5px;
   padding: 7px 12px;
   cursor: pointer;
@@ -218,13 +218,23 @@
 }
 
 .anaglyph-toggle:hover {
-  border-color: #57e089;
+  border-color: #48d1ff;
 }
 
+/* Was dark text (#0a0d0a) on a solid bright cyan fill — flipping to dark
+   text for the "active" state is fragile: it only reads well if that exact
+   dark tone stays sharp against the fill at every size/weight/font-
+   rendering path, and on a real phone it came out nearly illegible.
+   Keeping the same light text color as the resting state and marking
+   "active" with a glow + tinted (not solid) fill instead is safer — it
+   can't fail by looking like the resting state's *text* got the wrong
+   color, only by looking slightly less lit, which is still legible either
+   way. */
 .anaglyph-toggle[data-active="true"] {
-  color: #0a0d0a;
-  background: #57e089;
-  border-color: #57e089;
+  color: #eafcff;
+  background: rgba(72, 209, 255, 0.28);
+  border-color: #48d1ff;
+  box-shadow: 0 0 10px rgba(72, 209, 255, 0.5);
 }
 
 .wave-banner {
@@ -236,10 +246,10 @@
   font-family: "Consolas", monospace;
   font-size: 15px;
   letter-spacing: 0.02em;
-  color: #57e089;
-  text-shadow: 0 0 12px rgba(87, 224, 137, 0.7);
+  color: #48d1ff;
+  text-shadow: 0 0 12px rgba(72, 209, 255, 0.7);
   background: rgba(10, 13, 10, 0.65);
-  border: 1px solid rgba(87, 224, 137, 0.4);
+  border: 1px solid rgba(72, 209, 255, 0.4);
   border-radius: 6px;
   padding: 8px 20px;
   animation: wave-banner-fade 2.2s ease-out forwards;
@@ -272,10 +282,10 @@
   font-size: 14px;
   color: #a9c2a0;
   background: rgba(10, 13, 10, 0.65);
-  border: 1px solid rgba(87, 224, 137, 0.25);
+  border: 1px solid rgba(72, 209, 255, 0.25);
   border-radius: 5px;
   padding: 6px 16px;
-  text-shadow: 0 0 6px rgba(87, 224, 137, 0.5);
+  text-shadow: 0 0 6px rgba(72, 209, 255, 0.5);
   direction: rtl;
 }
 
@@ -291,7 +301,7 @@
 
 .hud-panel {
   text-align: center;
-  border: 1px solid rgba(87, 224, 137, 0.35);
+  border: 1px solid rgba(72, 209, 255, 0.35);
   background: #10150e;
   padding: 32px 44px;
   border-radius: 10px;
@@ -301,8 +311,8 @@
 .hud-panel h1 {
   margin: 0 0 12px;
   font-size: 22px;
-  color: #57e089;
-  text-shadow: 0 0 12px rgba(87, 224, 137, 0.6);
+  color: #48d1ff;
+  text-shadow: 0 0 12px rgba(72, 209, 255, 0.6);
 }
 
 .hud-panel p {
@@ -315,7 +325,7 @@
   font-family: inherit;
   font-size: 14px;
   color: #0a0d0a;
-  background: #57e089;
+  background: #48d1ff;
   border: none;
   border-radius: 6px;
   padding: 10px 24px;
@@ -323,5 +333,5 @@
 }
 
 .hud-panel button:hover {
-  background: #7cff9e;
+  background: #8ee6ff;
 }

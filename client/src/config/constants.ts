@@ -4,8 +4,33 @@
 // everything being flat, self-lit color.
 export const COLORS = {
   background: "#0a0d0a",
+  // Reserved for the SHIP ITSELF (Ship.tsx's own glow, its bolts, the spark
+  // when it takes a hit) — deliberately NOT used anywhere else anymore.
+  // Green phosphor read as a CRT-terminal callback everywhere it touched —
+  // fine as the ship's own identity, but pervasive across the HUD, the
+  // targeting reticle, shields and the background nebula it was reading as
+  // dated nostalgia rather than the "amazing, modern" look this project
+  // has aimed for since day one. See `accent` below for what replaced it
+  // in every one of those other places.
   phosphor: "#57e089",
   phosphorDim: "#2f6b48",
+  // The general UI/ambient accent — HUD text and borders, buttons, the
+  // targeting reticle/aim line, shields' healthy tint, half the background
+  // nebula. An electric cyan reads as modern sci-fi tech (Tron/HUD-diagram
+  // territory) rather than retro-terminal, and pairs as a cool complement
+  // against both the ship's green and the enemies' hot magenta-red.
+  // Matches pickupHealth exactly on purpose — "cool cyan = helpful/
+  // informational" is now one consistent association across the whole game
+  // rather than a coincidence.
+  accent: "#48d1ff",
+  accentDim: "#1c5f73",
+  // Shields' own hue — distinct from BOTH the ship's green and the general
+  // UI's cyan (`accent`), rather than sharing accent and quietly recreating
+  // the exact "one color owns the whole screen" problem this whole recolor
+  // was meant to fix, just with cyan instead of green. A cool indigo-blue
+  // reads as "energy barrier / force field," a well-worn sci-fi convention
+  // of its own (distinct from "targeting/informational" cyan).
+  shieldHealthy: "#7c9eff",
   // Enemy accent: was a dated, low-saturation amber/orange. Replaced with a
   // hot magenta-red — reads as a genuine "hostile alien energy" color and
   // sits as a strong complementary contrast against the ship's green,
@@ -17,10 +42,22 @@ export const COLORS = {
   // hot orange keeps the same warm/hostile family without being identical.
   enemyBolt: "#ff8c3d",
   text: "#d9e5d1",
-  hull: "#2a3230",
-  hullDark: "#171c1a",
-  enemyHull: "#2b1620",
-  enemyHullDark: "#160a10",
+  // Only Ship.tsx uses these now (shields moved to their own dedicated
+  // colors above) — brightened a bit from #2a3230/#171c1a specifically
+  // because the ship's hull surfaces were reading as near-black outside
+  // the glowing canopy/engine parts: at the metalness those materials used
+  // (0.6-0.8, i.e. mirror-like), a surface this dark barely picks up
+  // ambient/diffuse light at all and depends on a precise specular
+  // highlight to show anything — see Ship.tsx's own reduced metalness for
+  // the other half of that fix.
+  hull: "#3a4642",
+  hullDark: "#212f2a",
+  // Brightened for the same reason as hull/hullDark above — a dark surface
+  // at moderate-high metalness reads as near-black outside a precise
+  // specular highlight, leaving only the emissive eye/ring/turret glow
+  // visible and the actual body shape unclear.
+  enemyHull: "#3d2230",
+  enemyHullDark: "#241220",
   rimLight: "#6fa8ff",
   // Pickups: a third hue family, distinct from both the ship's green and the
   // enemies' magenta-red, so a drifting capsule reads as "neither of those"
@@ -224,7 +261,7 @@ export const SHIELD = {
 // tint (hud.css) — one consistent "getting dangerous" color across the HUD
 // and the 3D scene, rather than two different unrelated warning hues.
 export const SHIELD_HEALTH_COLORS = {
-  healthy: COLORS.phosphor, // > 66% of this bunker's blocks remain
+  healthy: COLORS.shieldHealthy, // > 66% of this bunker's blocks remain
   damaged: "#e2a23f", // > 33% remain
   critical: "#ff4d4d", // <= 33% remain
 };

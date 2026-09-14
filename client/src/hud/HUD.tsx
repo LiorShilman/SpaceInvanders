@@ -94,7 +94,7 @@ export function HUD({
   }, [bannerText, clearBanner]);
 
   return (
-    <div className="hud">
+    <div className={compact ? "hud hud--compact" : "hud"}>
       <div className="hud-bar">
         <div className="hud-stat">
           <span className="hud-label">

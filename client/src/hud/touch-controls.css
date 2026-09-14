@@ -29,8 +29,8 @@
   height: 132px;
   border-radius: 50%;
   background: rgba(10, 13, 10, 0.55);
-  border: 1px solid rgba(87, 224, 137, 0.35);
-  box-shadow: 0 0 16px rgba(87, 224, 137, 0.15) inset;
+  border: 1px solid rgba(72, 209, 255, 0.35);
+  box-shadow: 0 0 16px rgba(72, 209, 255, 0.15) inset;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -40,9 +40,9 @@
   width: 56px;
   height: 56px;
   border-radius: 50%;
-  background: rgba(87, 224, 137, 0.35);
-  border: 1px solid rgba(87, 224, 137, 0.8);
-  box-shadow: 0 0 12px rgba(87, 224, 137, 0.6);
+  background: rgba(72, 209, 255, 0.35);
+  border: 1px solid rgba(72, 209, 255, 0.8);
+  box-shadow: 0 0 12px rgba(72, 209, 255, 0.6);
   /* transform is set imperatively per-frame-of-drag in TouchControls.tsx —
      transitioning it here would lag a fast thumb behind its own finger. */
 }
@@ -61,7 +61,7 @@
   font-family: "Consolas", monospace;
   color: #d9e5d1;
   background: rgba(10, 13, 10, 0.6);
-  border: 1px solid rgba(87, 224, 137, 0.4);
+  border: 1px solid rgba(72, 209, 255, 0.4);
   border-radius: 50%;
   display: flex;
   align-items: center;
@@ -75,8 +75,8 @@
 }
 
 .touch-dive-btn:active {
-  background: rgba(87, 224, 137, 0.3);
-  border-color: #57e089;
+  background: rgba(72, 209, 255, 0.3);
+  border-color: #48d1ff;
 }
 
 .touch-fire-btn {

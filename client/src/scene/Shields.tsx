@@ -1,6 +1,6 @@
 import { forwardRef } from "react";
 import * as THREE from "three";
-import { COLORS, SHIELD_HEALTH_COLORS } from "../config/constants";
+import { SHIELD_HEALTH_COLORS } from "../config/constants";
 
 interface ShieldsProps {
   count: number;
@@ -46,36 +46,46 @@ export const Shields = forwardRef<ShieldTierMeshes, ShieldsProps>(function Shiel
           memory cost (a few hundred mat4 instances) for guaranteed-correct
           rendering, and 3 draw calls total is nothing next to this
           project's real instancing win (40 separate enemy meshes -> 1). */}
+      {/* color (the lit albedo) carries the tier hue now, not a dark hull
+          tint — emissive was doing that job alone at a high enough
+          intensity (0.4-1.1) to flatten the icosahedron into a single
+          solid-looking silhouette: emissive light isn't affected by a
+          facet's normal, so a strong enough emissive term washes out the
+          very shading that makes each facet read as its own plane. A
+          bright *lit* color responds properly to the scene's directional
+          lights facet-by-facet, restoring the faceted crystal look; a much
+          smaller emissive now only adds a bit of "glowing from within" on
+          top instead of overpowering it. */}
       <instancedMesh ref={healthyRef} args={[undefined, undefined, count]} frustumCulled={false}>
         <icosahedronGeometry args={[0.27, 0]} />
         <meshStandardMaterial
-          color={COLORS.hull}
+          color={SHIELD_HEALTH_COLORS.healthy}
           emissive={SHIELD_HEALTH_COLORS.healthy}
-          emissiveIntensity={0.4}
-          metalness={0.4}
-          roughness={0.6}
+          emissiveIntensity={0.15}
+          metalness={0.3}
+          roughness={0.45}
           flatShading
         />
       </instancedMesh>
       <instancedMesh ref={damagedRef} args={[undefined, undefined, count]} frustumCulled={false}>
         <icosahedronGeometry args={[0.27, 0]} />
         <meshStandardMaterial
-          color={COLORS.hull}
+          color={SHIELD_HEALTH_COLORS.damaged}
           emissive={SHIELD_HEALTH_COLORS.damaged}
-          emissiveIntensity={0.7}
-          metalness={0.4}
-          roughness={0.6}
+          emissiveIntensity={0.3}
+          metalness={0.3}
+          roughness={0.45}
           flatShading
         />
       </instancedMesh>
       <instancedMesh ref={criticalRef} args={[undefined, undefined, count]} frustumCulled={false}>
         <icosahedronGeometry args={[0.27, 0]} />
         <meshStandardMaterial
-          color={COLORS.hull}
+          color={SHIELD_HEALTH_COLORS.critical}
           emissive={SHIELD_HEALTH_COLORS.critical}
-          emissiveIntensity={1.1}
-          metalness={0.4}
-          roughness={0.6}
+          emissiveIntensity={0.5}
+          metalness={0.3}
+          roughness={0.45}
           flatShading
         />
       </instancedMesh>

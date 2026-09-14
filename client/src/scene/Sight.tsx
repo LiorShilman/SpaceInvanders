@@ -20,7 +20,7 @@ export const AimLine = forwardRef<THREE.Mesh>(function AimLine(_props, ref) {
     <mesh ref={ref} rotation={[Math.PI / 2, 0, 0]} renderOrder={-1}>
       <cylinderGeometry args={[0.02, 0.02, AIM_LINE_LENGTH, 6]} />
       <meshBasicMaterial
-        color={COLORS.phosphor}
+        color={COLORS.accent}
         transparent
         opacity={0.22}
         toneMapped={false}
@@ -35,11 +35,11 @@ export const LockReticle = forwardRef<THREE.Group>(function LockReticle(_props, 
     <group ref={ref} visible={false}>
       <mesh>
         <torusGeometry args={[0.85, 0.025, 6, 24]} />
-        <meshBasicMaterial color={COLORS.phosphor} toneMapped={false} transparent opacity={0.85} />
+        <meshBasicMaterial color={COLORS.accent} toneMapped={false} transparent opacity={0.85} />
       </mesh>
       <mesh rotation={[0, Math.PI / 2, 0]}>
         <torusGeometry args={[0.85, 0.025, 6, 24]} />
-        <meshBasicMaterial color={COLORS.phosphor} toneMapped={false} transparent opacity={0.85} />
+        <meshBasicMaterial color={COLORS.accent} toneMapped={false} transparent opacity={0.85} />
       </mesh>
     </group>
   );

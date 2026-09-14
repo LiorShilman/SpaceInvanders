@@ -109,29 +109,35 @@ export const Enemies = forwardRef<EnemiesHandle, EnemiesProps>(function Enemies(
 
   return (
     <>
+      {/* Metalness lowered and roughness raised across every enemy hull
+          part here — same fix as the ship's own hull (see Ship.tsx's
+          comment): at 0.5-0.6 metalness a surface only shows anything
+          where a light happens to hit it at the right specular angle, and
+          the eye/ring/turret glow was carrying the entire silhouette
+          instead of the body shape itself. */}
       <instancedMesh ref={shellOuterRef} args={[shellOuterGeo, undefined, count]} frustumCulled={false}>
         <meshStandardMaterial
           color={COLORS.enemyHull}
           emissive={COLORS.amberDim}
           emissiveIntensity={0.35}
-          metalness={0.6}
-          roughness={0.4}
+          metalness={0.4}
+          roughness={0.5}
           flatShading
         />
       </instancedMesh>
       <instancedMesh ref={shellInnerRef} args={[shellInnerGeo, undefined, count]} frustumCulled={false}>
         <meshStandardMaterial
           color={COLORS.enemyHullDark}
-          metalness={0.5}
-          roughness={0.6}
+          metalness={0.35}
+          roughness={0.65}
           flatShading
         />
       </instancedMesh>
       <instancedMesh ref={turretRef} args={[turretGeo, undefined, count]} frustumCulled={false}>
         <meshStandardMaterial
           color={COLORS.enemyHullDark}
-          metalness={0.6}
-          roughness={0.4}
+          metalness={0.4}
+          roughness={0.5}
           flatShading
         />
       </instancedMesh>
@@ -156,8 +162,8 @@ export const Enemies = forwardRef<EnemiesHandle, EnemiesProps>(function Enemies(
           color={COLORS.enemyHullDark}
           emissive={COLORS.amberDim}
           emissiveIntensity={0.3}
-          metalness={0.5}
-          roughness={0.55}
+          metalness={0.35}
+          roughness={0.65}
           flatShading
         />
       </instancedMesh>
