@@ -241,10 +241,22 @@ export const FORMATION = {
 // Each cleared wave respawns a new one — harder, not the same — via these
 // per-wave multipliers (wave 1 is the baseline FORMATION values above).
 export const WAVE_SCALING = {
-  advanceSpeedGrowth: 1.12, // x per wave
+  advanceSpeedGrowth: 1.12, // x per wave, capped below
   fireIntervalShrink: 0.94, // x per wave, floored below
   minFireIntervalMin: 0.6,
   minFireIntervalMax: 1.2,
+  // The fire-rate curve above already has a floor it settles into — the
+  // advance-speed curve had no equivalent ceiling, so it kept compounding
+  // exponentially forever (1.12^(wave-1): ~8x by wave 20, ~27x by wave 30).
+  // Past a certain point that stops reading as "harder" and starts reading
+  // as "the formation teleports to the front line the instant it spawns,"
+  // which the proximity-based invasion check (HIT_RADIUS.enemyVsShip)
+  // doesn't actually need to be survivable — capped at 4x the wave-1
+  // baseline (reached around wave 13), late enough for the early/mid game
+  // to keep escalating meaningfully, high enough that it's still a real
+  // late-game gut check rather than a soft cap that undersells the
+  // difficulty entirely.
+  maxAdvanceSpeedMultiplier: 4,
 };
 
 // Destructible bunkers between the ship and the wave — chip away block by

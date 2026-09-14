@@ -209,7 +209,10 @@ function shieldTierForFraction(fraction: number): 0 | 1 | 2 {
 
 /** Per-wave difficulty: wave 1 is exactly the FORMATION baseline. */
 function waveDifficulty(wave: number) {
-  const growth = Math.pow(WAVE_SCALING.advanceSpeedGrowth, wave - 1);
+  const growth = Math.min(
+    WAVE_SCALING.maxAdvanceSpeedMultiplier,
+    Math.pow(WAVE_SCALING.advanceSpeedGrowth, wave - 1),
+  );
   const shrink = Math.pow(WAVE_SCALING.fireIntervalShrink, wave - 1);
   return {
     advanceSpeed: FORMATION.advanceSpeed * growth,
