@@ -252,12 +252,12 @@ function spawn(pool: Pool, position: THREE.Vector3) {
   mesh.position.copy(position);
 }
 
-type PickupKind = "health" | "weapon";
+type PickupKind = "health" | "weapon" | "bomb";
 type PickupSlot = {
-  // The root of a <Pickup> group, which contains BOTH visual variants as
-  // named children — see Pickup.tsx. Not a single mesh: a pooled slot is
-  // reused across kinds, and telling health/weapon apart by shape (not just
-  // color) needed two real, differently-shaped children to toggle between.
+  // The root of a <Pickup> group, which contains all three visual variants
+  // as named children — see Pickup.tsx. Not a single mesh: a pooled slot is
+  // reused across kinds, and telling them apart by shape (not just color)
+  // needed real, differently-shaped children to toggle between.
   ref: React.RefObject<THREE.Group | null>;
   active: boolean;
   kind: PickupKind;
@@ -666,8 +666,9 @@ export function Scene() {
 
   /**
    * Rolls PICKUP.dropChance at an enemy's death position — most kills drop
-   * nothing. When one does, it's health (restore some) or a weapon crate
-   * (spread or rapid, picked at random), 50/50 either way.
+   * nothing. When one does, it's a rare nova bomb (see PICKUP.
+   * bombShareOfDrops) or, far more often, health (restore some) or a
+   * weapon crate (spread or rapid, picked at random), 50/50 either way.
    */
   function spawnPickup(position: THREE.Vector3) {
     if (Math.random() >= PICKUP.dropChance) return;
@@ -677,7 +678,9 @@ export function Scene() {
 
     slot.active = true;
     slot.age = 0;
-    if (Math.random() < 0.5) {
+    if (Math.random() < PICKUP.bombShareOfDrops) {
+      slot.kind = "bomb";
+    } else if (Math.random() < 0.5) {
       slot.kind = "health";
     } else {
       slot.kind = "weapon";
@@ -687,13 +690,15 @@ export function Scene() {
     group.visible = true;
     group.position.copy(position);
     group.scale.setScalar(PICKUP.visualScale);
-    // Both variants live under the same pooled group (see Pickup.tsx) —
-    // toggle which one shows rather than mutating a shared material color,
-    // since health/weapon now differ in actual shape, not just tint.
+    // All three variants live under the same pooled group (see Pickup.tsx)
+    // — toggle which one shows rather than mutating a shared material
+    // color, since they differ in actual shape, not just tint.
     const healthVisual = group.getObjectByName("health-visual");
     const weaponVisual = group.getObjectByName("weapon-visual");
+    const bombVisual = group.getObjectByName("bomb-visual");
     if (healthVisual) healthVisual.visible = slot.kind === "health";
     if (weaponVisual) weaponVisual.visible = slot.kind === "weapon";
+    if (bombVisual) bombVisual.visible = slot.kind === "bomb";
   }
 
   /**
@@ -712,9 +717,16 @@ export function Scene() {
    * A non-lethal hit on a Heavy (see ENEMY_VARIANTS.heavy) just chips it —
    * no kill, no score, no pickup roll, no alive-count change, and its
    * transform is untouched since only its health changed. Anything else
-   * dies outright, exactly as every enemy always has.
+   * dies outright, exactly as every enemy always has. `forceLethal` and
+   * `noDrop` exist solely for the nova bomb (see triggerNovaBomb), which
+   * needs every hit to be a kill regardless of remaining Heavy health, and
+   * needs kills not to roll further pickup drops of their own.
    */
-  function applyEnemyHit(formation: THREE.Group, e: number) {
+  function applyEnemyHit(
+    formation: THREE.Group,
+    e: number,
+    options?: { forceLethal?: boolean; noDrop?: boolean },
+  ) {
     const dive = diveWorldPos.current[e];
     const local = layout[e];
     const ex = dive ? dive.x : formation.position.x + local[0];
@@ -722,7 +734,7 @@ export function Scene() {
     const ez = dive ? dive.z : formation.position.z + local[2];
 
     const wasHeavy = enemyIsHeavy.current[e];
-    enemyHealth.current[e] -= 1;
+    enemyHealth.current[e] -= options?.forceLethal ? enemyHealth.current[e] : 1;
     if (enemyHealth.current[e] > 0) {
       explosions.trigger(new THREE.Vector3(ex, ey, ez), COLORS.amberDim);
       sound.enemyHit();
@@ -746,7 +758,7 @@ export function Scene() {
 
     const bonus = (wasDiving ? DIVE.killBonus : 0) + (wasHeavy ? ENEMY_VARIANTS.heavy.killBonus : 0);
     useGameStore.getState().registerKill(bonus);
-    spawnPickup(new THREE.Vector3(ex, ey, ez));
+    if (!options?.noDrop) spawnPickup(new THREE.Vector3(ex, ey, ez));
     aliveCount.current -= 1;
     useGameStore.getState().setEnemiesRemaining(aliveCount.current);
     if (aliveCount.current <= 0) {
@@ -754,6 +766,62 @@ export function Scene() {
       spawnWave(formation, useGameStore.getState().wave);
       sound.waveClear();
     }
+  }
+
+  /**
+   * Shared by both ways a boss can die: the ordinary per-bolt hit-test and
+   * the nova bomb's own flat damage chunk (see triggerNovaBomb). Kept as
+   * one function so the two never drift out of sync on what "defeating the
+   * boss" actually does.
+   */
+  function defeatBossNow(formation: THREE.Group) {
+    const boss = bossRef.current;
+    if (!boss) return;
+    explosions.trigger(boss.position.clone(), COLORS.accent);
+    boss.visible = false;
+    bossActive.current = false;
+    useGameStore.getState().defeatBoss(BOSS.killScore);
+    spawnWave(formation, useGameStore.getState().wave);
+    sound.waveClear();
+    addShake(0.9);
+    // Bullet time for the single biggest moment in a run — see
+    // hitstopUntil's own comment for why this is reserved for exactly this
+    // event and nothing more frequent.
+    hitstopUntil.current = Date.now() + 450;
+  }
+
+  /**
+   * Nova bomb (see PICKUP.bombShareOfDrops): an instant screen-clear rather
+   * than an equipped buff. Every alive regular enemy dies outright, reusing
+   * applyEnemyHit's own kill path (explosion, sound, scoring, wave-clear
+   * check) via forceLethal — noDrop stops one bomb from cascading into a
+   * pile of further pickup drops. An active boss takes a flat chunk of
+   * damage instead of being immune just because it isn't a "regular enemy."
+   */
+  function triggerNovaBomb(formation: THREE.Group) {
+    for (let e = 0; e < ENEMY_COUNT; e++) {
+      if (!enemyAlive.current[e]) continue;
+      const beforeCount = aliveCount.current;
+      applyEnemyHit(formation, e, { forceLethal: true, noDrop: true });
+      // If that kill emptied the wave, applyEnemyHit's own wave-clear check
+      // already spawned a brand new one — aliveCount jumps back UP to the
+      // new wave's full count instead of continuing to decrement, which is
+      // how that's detected here (rather than duplicating the check).
+      // enemyAlive/layout now describe THAT new wave, not the one this
+      // loop was iterating; continuing would kill enemies the player never
+      // even saw. Stop immediately.
+      if (aliveCount.current > beforeCount) break;
+    }
+    if (bossActive.current && bossRef.current) {
+      bossHealth.current = Math.max(0, bossHealth.current - PICKUP.novaBossDamage);
+      useGameStore.getState().damageBoss(PICKUP.novaBossDamage);
+      bossHitFlashUntil.current = simTime.current + 0.15;
+      explosions.trigger(bossRef.current.position.clone(), COLORS.pickupBomb);
+      if (bossHealth.current <= 0) defeatBossNow(formation);
+    }
+    addShake(0.7);
+    sound.novaBomb();
+    useGameStore.getState().collectNova();
   }
 
   useFrame((_state, rawDelta) => {
@@ -830,6 +898,7 @@ export function Scene() {
           blocksPerShield,
           tryHitShieldDebug: tryHitShield,
           applyPlayerHitDebug: (e: number) => applyEnemyHit(formation, e),
+          triggerNovaBombDebug: () => triggerNovaBomb(formation),
         };
       }
 
@@ -1347,19 +1416,7 @@ export function Scene() {
             // regular enemy's own explosion+kill already does in one shot.
             bossHitFlashUntil.current = simTime.current + 0.15;
             addShake(0.12);
-            if (bossHealth.current <= 0) {
-              explosions.trigger(boss.position.clone(), COLORS.accent);
-              boss.visible = false;
-              bossActive.current = false;
-              useGameStore.getState().defeatBoss(BOSS.killScore);
-              spawnWave(formation, useGameStore.getState().wave);
-              sound.waveClear();
-              addShake(0.9);
-              // Bullet time for the single biggest moment in a run — see
-              // hitstopUntil's own comment for why this is reserved for
-              // exactly this event and nothing more frequent.
-              hitstopUntil.current = now + 450;
-            }
+            if (bossHealth.current <= 0) defeatBossNow(formation);
             continue;
           }
         }
@@ -1398,6 +1455,14 @@ export function Scene() {
         mesh.position.y = THREE.MathUtils.lerp(mesh.position.y, ship.position.y, PICKUP.homingRate * delta);
         mesh.rotation.y += delta * 2.4;
         mesh.rotation.x += delta * 1.1;
+        // The nova bomb's ring spins on its own local axis, independent of
+        // the whole capsule's own tumble above — see Pickup.tsx's own
+        // comment on why that's what actually sells "orbiting" rather than
+        // just another static shape riding along.
+        if (slot.kind === "bomb") {
+          const ring = mesh.getObjectByName("bomb-ring");
+          if (ring) ring.rotation.z += delta * 4;
+        }
 
         if (slot.age >= PICKUP.lifetime || mesh.position.z > ship.position.z + 6) {
           slot.active = false;
@@ -1415,12 +1480,17 @@ export function Scene() {
             explosions.trigger(ship.position.clone(), COLORS.pickupHealth);
             useGameStore.getState().collectHealth(PICKUP.healthRestore);
             sound.pickupHealth();
-          } else {
+          } else if (slot.kind === "weapon") {
             explosions.trigger(ship.position.clone(), COLORS.pickupWeapon);
             weaponRef.current = { kind: slot.weaponKind, expiresAt: now + WEAPON.duration * 1000 };
             setShipAccentColor(ship, COLORS.pickupWeapon);
             useGameStore.getState().collectWeapon(slot.weaponKind, WEAPON.duration * 1000);
             sound.pickupWeapon();
+          } else {
+            // Nova bomb: detonates instantly rather than being equipped —
+            // see triggerNovaBomb's own comment.
+            explosions.trigger(ship.position.clone(), COLORS.pickupBomb);
+            triggerNovaBomb(formation);
           }
         }
       }

@@ -66,6 +66,11 @@ export const COLORS = {
   // needs to carry.
   pickupHealth: "#48d1ff",
   pickupWeapon: "#c77dff",
+  // The nova bomb (see PICKUP.bombShareOfDrops) is deliberately a THIRD
+  // family again, not a variant of either existing pickup hue — a warm
+  // gold reads as "rare/premium" and stands well apart from cyan
+  // (informational), violet (buff) and the enemies' own magenta-red.
+  pickupBomb: "#ffd76a",
 } as const;
 
 // Arena bounds the player ship can move within (world units). Must cover the
@@ -148,6 +153,16 @@ export const PICKUP = {
   // group up further so a capsule is unmistakably a pickup, not just
   // another shot flying past.
   visualScale: 1.7,
+  // Nova bomb: a rare third kind, layered on top of the existing 50/50
+  // health/weapon split rather than its own separate roll — this fraction
+  // of an already-rolled drop is a bomb instead (so its overall odds per
+  // kill are dropChance * bombShareOfDrops, roughly 0.7%). Collecting one
+  // instantly detonates rather than being equipped: every alive regular
+  // enemy dies outright (see Scene.tsx's triggerNovaBomb), and an active
+  // boss takes a flat chunk of damage instead of being immune just because
+  // it isn't a "regular enemy."
+  bombShareOfDrops: 0.06,
+  novaBossDamage: 8,
 };
 
 // Temporary alternate fire modes granted by a weapon-crate pickup — revert

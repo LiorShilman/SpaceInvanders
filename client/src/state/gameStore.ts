@@ -92,6 +92,10 @@ interface GameState {
   registerKill: (bonus?: number) => void;
   collectHealth: (amount: number) => void;
   collectWeapon: (kind: WeaponKind, durationMs: number) => void;
+  /** Nova bomb collected — Scene does the actual screen-clear (see
+   * triggerNovaBomb); this just announces it, same as collectHealth/
+   * collectWeapon do for their own pickups. */
+  collectNova: () => void;
   revertWeapon: () => void;
   setEnemiesRemaining: (count: number) => void;
   advanceWave: () => void;
@@ -225,6 +229,8 @@ export const useGameStore = create<GameState>((set, get) => ({
       weaponExpiresAt: Date.now() + durationMs,
       bannerText: `נשק חדש: ${WEAPON_LABELS[kind]}`,
     }),
+
+  collectNova: () => set({ bannerText: "פצצת נובה! 💥 כל האויבים הושמדו" }),
 
   // Scene calls this once its own timer sees the current weapon's time run
   // out — silent on purpose (no banner), unlike picking one up.

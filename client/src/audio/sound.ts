@@ -159,4 +159,12 @@ export const sound = {
     tone(660, 990, 0.16, { type: "square", volume: 0.12 });
     tone(990, 1320, 0.16, { type: "square", volume: 0.09, delay: 0.05 });
   },
+  novaBomb() {
+    // A rare, deliberately bigger and louder cue than anything else here —
+    // this is the one pickup meant to feel like a genuine power surge, not
+    // just another impact or another buff.
+    noiseBurst(0.5, { volume: 0.3, filterFreq: 3000 });
+    tone(120, 900, 0.4, { type: "sawtooth", volume: 0.22 });
+    tone(900, 200, 0.5, { type: "sine", volume: 0.18, delay: 0.15 });
+  },
 };
