@@ -348,6 +348,24 @@ export function Scene() {
   const bossNextFireAt = useRef(0);
   const bossSweepDir = useRef<1 | -1>(1);
 
+  // Camera shake: a decaying "trauma" scalar (0..1, see addShake) rather
+  // than a one-shot animation — several hits landing close together should
+  // compound into a bigger shake, not restart a fixed-length effect from
+  // scratch each time. camShakeOffset is the actual position displacement
+  // applied last frame, subtracted back out at the start of the next one —
+  // camera.position is otherwise the smooth chase-camera's own lerp
+  // accumulator (see the camera block at the bottom of useFrame), and
+  // without undoing it first, each frame's shake would permanently drift
+  // that accumulator instead of just wobbling the visible result.
+  const camShake = useRef(0);
+  const camShakeOffset = useRef(new THREE.Vector3());
+
+  /** Adds to the current shake trauma (capped at 1) — bigger events (a lost
+   * life, a defeated boss) pass a bigger amount than a glancing hit. */
+  function addShake(amount: number) {
+    camShake.current = Math.min(1, camShake.current + amount);
+  }
+
   const playerBolts = useRef<Pool>(makePool(PROJECTILE.poolSize, -1, PROJECTILE.playerSpeed));
   const enemyBolts = useRef<Pool>(makePool(PROJECTILE.poolSize, 1, PROJECTILE.enemySpeed));
   const pickups = useRef<PickupSlot[]>(makePickupPool(PICKUP_POOL_SIZE));
@@ -754,6 +772,8 @@ export function Scene() {
           bossActiveRef: bossActive,
           bossHealthRef: bossHealth,
           bossNextFireAtRef: bossNextFireAt,
+          camShakeRef: camShake,
+          camera,
           weaponRef,
           pickupsRef: pickups.current,
           playerBoltsRef: playerBolts.current,
@@ -1027,9 +1047,11 @@ export function Scene() {
         const survived = useGameStore.getState().handleInvasion();
         if (!survived && useGameStore.getState().status === "gameover") {
           sound.gameOver();
+          addShake(0.8);
         }
         if (survived) {
           sound.lifeLost();
+          addShake(0.5);
           // A life remained: push the wave back to its starting depth and
           // respawn the ship, but touch NOTHING else — enemies already
           // killed stay dead, shield damage stays, ammo in flight keeps
@@ -1213,6 +1235,7 @@ export function Scene() {
               useGameStore.getState().defeatBoss(BOSS.killScore);
               spawnWave(formation, useGameStore.getState().wave);
               sound.waveClear();
+              addShake(0.9);
             }
             continue;
           }
@@ -1320,9 +1343,16 @@ export function Scene() {
           // We already know (via the invulnerable check above) this damage
           // wasn't blocked — pick the sound by what it actually cost:
           // just health, a whole life, or the run itself.
-          if (after.status === "gameover") sound.gameOver();
-          else if (after.lives < livesBefore) sound.lifeLost();
-          else sound.playerHit();
+          if (after.status === "gameover") {
+            sound.gameOver();
+            addShake(0.8);
+          } else if (after.lives < livesBefore) {
+            sound.lifeLost();
+            addShake(0.5);
+          } else {
+            sound.playerHit();
+            addShake(0.22);
+          }
         }
       }
     } else {
@@ -1334,6 +1364,13 @@ export function Scene() {
 
     // --- chase camera (keeps following even when not "playing", so the
     // game-over / cleared framing doesn't snap) -----------------------------
+    // Undo last frame's shake offset first — camera.position is the smooth
+    // lerp's own running accumulator, and without reverting the previous
+    // frame's jitter before adding this frame's, the shake would
+    // permanently drift that accumulator instead of just wobbling the
+    // visible result around it (see camShakeOffset's own comment).
+    camera.position.sub(camShakeOffset.current);
+
     // Pulled back and aimed further downrange than the ship-relative offsets
     // alone would give, so the gap to the wave actually reads on screen.
     const targetCamPos = new THREE.Vector3(
@@ -1343,6 +1380,18 @@ export function Scene() {
     );
     camera.position.lerp(targetCamPos, 1 - Math.pow(0.001, delta));
     camera.lookAt(ship.position.x * 0.5, ship.position.y + 1, ship.position.z - 30);
+
+    // --- camera shake: decay the trauma, then re-derive this frame's jitter
+    // from it (squared, for a punchier snap that tails off quickly rather
+    // than a linear fade) — see addShake's own call sites for what feeds it.
+    camShake.current = Math.max(0, camShake.current - delta * 2.2);
+    const shakeMag = camShake.current * camShake.current * 0.55;
+    camShakeOffset.current.set(
+      shakeMag > 0.0005 ? (Math.random() * 2 - 1) * shakeMag : 0,
+      shakeMag > 0.0005 ? (Math.random() * 2 - 1) * shakeMag : 0,
+      0,
+    );
+    camera.position.add(camShakeOffset.current);
   });
 
   return (
