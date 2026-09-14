@@ -303,6 +303,46 @@ export const DIVE = {
   killBonus: 50,
 };
 
+// Boss waves: every BOSS.waveInterval-th wave replaces the normal grid
+// formation entirely with one large, multi-hit enemy — the last item from
+// docs/GAME_PLAN.md's Phase 2 outline. Deliberately reuses as much of the
+// existing per-frame machinery as possible rather than building a parallel
+// system: its barrage is just ordinary pooled enemy bolts (the existing
+// "enemy bolts vs ship" loop needs no changes at all to handle them), and
+// "the boss rammed the ship" reuses the exact same handleInvasion()
+// life-loss path the regular formation's own proximity check already uses.
+export const BOSS = {
+  waveInterval: 5,
+  // Hits to kill on its first appearance (wave 5); grows on every repeat
+  // encounter (wave 10, 15, ...) the same escalating-difficulty way
+  // WAVE_SCALING does for the ordinary formation.
+  baseHealth: 24,
+  healthGrowthPerEncounter: 10,
+  // Side-to-side sweep across the arena, not a fixed position — a
+  // stationary bullet-hopper would be trivial to sit under all fight.
+  sweepSpeed: 3.2,
+  advanceSpeed: 0.5,
+  // Stops noticeably further back than the regular formation's own
+  // frontLineZ (-8) — a much bigger, slower target needs more runway for
+  // its barrages to actually be dodgeable rather than instantly on top of
+  // the ship the moment it arrives.
+  frontLineZ: -16,
+  fireIntervalMin: 1.1,
+  fireIntervalMax: 2,
+  spreadCount: 5, // bolts per barrage, fanned across spreadWidth
+  spreadWidth: 3.6,
+  // Generously sized to its own visualScale below — a big target, meant to
+  // be easy to land shots on (the challenge is surviving its barrages and
+  // sweep, not pixel-precise aim).
+  hitRadius: 2.1,
+  // "Rammed the ship" proximity — bigger than HIT_RADIUS.enemyVsShip to
+  // match its much larger visual footprint, but frontLineZ above already
+  // keeps this a rare edge case rather than the fight's main danger.
+  contactRadius: 3,
+  killScore: 800,
+  visualScale: 4.2,
+};
+
 export const HIT_RADIUS = {
   playerProjectileVsEnemy: 0.75,
   enemyProjectileVsShip: 0.85,

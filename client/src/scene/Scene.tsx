@@ -3,6 +3,7 @@ import { useFrame, useThree } from "@react-three/fiber";
 import * as THREE from "three";
 import {
   ARENA,
+  BOSS,
   COLORS,
   DIVE,
   FORMATION,
@@ -19,6 +20,7 @@ import { sound } from "../audio/sound";
 import { useInput } from "../hooks/useInput";
 import { Ship } from "./Ship";
 import { Enemies, type EnemiesHandle } from "./Enemies";
+import { Boss } from "./Boss";
 import { Projectile } from "./Projectile";
 import { EnemyBolt } from "./EnemyBolt";
 import { Pickup } from "./Pickup";
@@ -328,6 +330,18 @@ export function Scene() {
   const diveWorldPos = useRef<Array<THREE.Vector3 | null>>(Array.from({ length: ENEMY_COUNT }, () => null));
   const nextDiveAt = useRef(DIVE.graceAfterWaveStart);
 
+  // Boss waves (see BOSS in config/constants.ts): every BOSS.waveInterval-th
+  // wave replaces the normal grid entirely with this one large, multi-hit
+  // enemy. These refs are the simulation's own source of truth — bossActive/
+  // bossHealth/bossMaxHealth are mirrored into the store purely so HUD can
+  // render a health bar, the same split as every other ref-vs-store value
+  // in this file (e.g. aliveCount vs. enemiesRemaining).
+  const bossRef = useRef<THREE.Group>(null);
+  const bossActive = useRef(false);
+  const bossHealth = useRef(0);
+  const bossNextFireAt = useRef(0);
+  const bossSweepDir = useRef<1 | -1>(1);
+
   const playerBolts = useRef<Pool>(makePool(PROJECTILE.poolSize, -1, PROJECTILE.playerSpeed));
   const enemyBolts = useRef<Pool>(makePool(PROJECTILE.poolSize, 1, PROJECTILE.enemySpeed));
   const pickups = useRef<PickupSlot[]>(makePickupPool(PICKUP_POOL_SIZE));
@@ -369,7 +383,14 @@ export function Scene() {
     formation.position.set(0, 0, FORMATION.startZ);
     currentDifficulty.current = waveDifficulty(wave);
 
-    const mask = buildWaveMask(wave);
+    // A boss wave (see BOSS.waveInterval) replaces the grid entirely — an
+    // all-false mask reuses the exact same per-slot hide loop below instead
+    // of a separate code path, so every regular-enemy system (column fire,
+    // diving, the small-enemy hit-test) naturally does nothing this wave
+    // simply because enemyAlive is false everywhere, with no extra
+    // conditions needed in any of those loops.
+    const isBossWave = wave % BOSS.waveInterval === 0;
+    const mask = isBossWave ? Array<boolean>(ENEMY_COUNT).fill(false) : buildWaveMask(wave);
     let waveCount = 0;
     for (let i = 0; i < ENEMY_COUNT; i++) {
       enemyAlive.current[i] = mask[i];
@@ -445,6 +466,33 @@ export function Scene() {
       diveWorldPos.current[e] = null;
     }
     nextDiveAt.current = DIVE.graceAfterWaveStart + Math.random() * (DIVE.cooldownMax - DIVE.cooldownMin);
+
+    if (isBossWave) {
+      // Health grows on every repeat encounter (wave 10, 15, ...), same
+      // escalating-difficulty spirit as WAVE_SCALING for the ordinary
+      // formation — encounterNumber is 1 the first time (wave 5), 2 the
+      // second (wave 10), etc.
+      const encounterNumber = wave / BOSS.waveInterval;
+      const maxHealth = BOSS.baseHealth + (encounterNumber - 1) * BOSS.healthGrowthPerEncounter;
+      bossActive.current = true;
+      bossHealth.current = maxHealth;
+      bossSweepDir.current = Math.random() < 0.5 ? -1 : 1;
+      // Scheduled the same way columnNextFire is just above: a raw value,
+      // implicitly relative to the simTime.current = 0 this function just
+      // set.
+      bossNextFireAt.current = BOSS.fireIntervalMin + Math.random() * (BOSS.fireIntervalMax - BOSS.fireIntervalMin);
+      if (bossRef.current) {
+        bossRef.current.visible = true;
+        bossRef.current.scale.setScalar(BOSS.visualScale);
+        bossRef.current.rotation.set(0, 0, 0);
+        bossRef.current.position.set(0, (ARENA.minY + ARENA.maxY) / 2, FORMATION.startZ);
+      }
+      useGameStore.getState().setBoss(true, maxHealth, maxHealth);
+    } else {
+      bossActive.current = false;
+      if (bossRef.current) bossRef.current.visible = false;
+      useGameStore.getState().setBoss(false, 0, 0);
+    }
   }
 
   /**
@@ -605,6 +653,10 @@ export function Scene() {
           diveStateArr: diveState.current,
           diveWorldPosArr: diveWorldPos.current,
           nextDiveAtRef: nextDiveAt,
+          bossRef,
+          bossActiveRef: bossActive,
+          bossHealthRef: bossHealth,
+          bossNextFireAtRef: bossNextFireAt,
           weaponRef,
           pickupsRef: pickups.current,
           playerBoltsRef: playerBolts.current,
@@ -790,6 +842,47 @@ export function Scene() {
         }
       }
 
+      // --- boss wave: sweep, advance, and barrage fire ------------------------
+      // See BOSS's own comment in config/constants.ts. Its barrage is just
+      // ordinary pooled enemy bolts — the existing "enemy bolts: move, cull,
+      // hit-test against ship" loop further down needs no changes at all to
+      // handle them.
+      if (bossActive.current && bossRef.current) {
+        const boss = bossRef.current;
+        // Side-to-side sweep, reversing at the arena's own bounds (minus a
+        // margin for its own visual footprint) rather than a fixed patrol
+        // width — automatically follows whatever ARENA.halfWidth is tuned
+        // to instead of needing its own separately-tuned constant.
+        const margin = ARENA.halfWidth * 0.25;
+        boss.position.x += bossSweepDir.current * BOSS.sweepSpeed * delta;
+        if (boss.position.x > ARENA.halfWidth - margin) {
+          boss.position.x = ARENA.halfWidth - margin;
+          bossSweepDir.current = -1;
+        } else if (boss.position.x < -(ARENA.halfWidth - margin)) {
+          boss.position.x = -(ARENA.halfWidth - margin);
+          bossSweepDir.current = 1;
+        }
+        boss.position.z = Math.min(boss.position.z + BOSS.advanceSpeed * delta, BOSS.frontLineZ);
+        // A small bob and a slow yaw — purely cosmetic, keeps what would
+        // otherwise read as a flat sprite gliding on rails feeling alive.
+        boss.rotation.y += delta * 0.15;
+        boss.position.y = (ARENA.minY + ARENA.maxY) / 2 + Math.sin(simTime.current * 0.8) * 0.6;
+
+        if (simTime.current >= bossNextFireAt.current) {
+          bossNextFireAt.current =
+            simTime.current + BOSS.fireIntervalMin + Math.random() * (BOSS.fireIntervalMax - BOSS.fireIntervalMin);
+          // A fanned barrage, not a single shot — the boss occupying one
+          // enemy "slot" worth of danger the whole fight would otherwise
+          // undersell replacing 40 enemies with it.
+          const half = (BOSS.spreadCount - 1) / 2;
+          for (let i = 0; i < BOSS.spreadCount; i++) {
+            const offsetX = (i - half) * (BOSS.spreadWidth / (BOSS.spreadCount - 1));
+            spawn(enemyBolts.current, new THREE.Vector3(boss.position.x + offsetX, boss.position.y, boss.position.z));
+          }
+          sound.enemyFire();
+        }
+      }
+
       // "The wave broke through" means a real alive enemy actually reached
       // the ship (see HIT_RADIUS.enemyVsShip's own comment for why this
       // replaced a fixed depth-only check) — not an abstract line the
@@ -819,6 +912,15 @@ export function Scene() {
       // (No separate "formation flew way past the ship" safety net needed
       // here anymore — frontLineZ above already hard-stops the formation's
       // own position well short of anywhere that could happen.)
+      // A boss "ramming" the ship reuses this exact same check/consequence —
+      // BOSS.frontLineZ keeps this a rare edge case rather than the fight's
+      // main danger, which is its barrage, not contact.
+      if (!enemyReachedShip && bossActive.current && bossRef.current) {
+        const dx = ship.position.x - bossRef.current.position.x;
+        const dy = ship.position.y - bossRef.current.position.y;
+        const dz = ship.position.z - bossRef.current.position.z;
+        if (dx * dx + dy * dy + dz * dz <= BOSS.contactRadius ** 2) enemyReachedShip = true;
+      }
       if (enemyReachedShip) {
         // The wave reached the player line. With lives in play this isn't
         // automatically the end of the run — handleInvasion costs a life
@@ -874,6 +976,18 @@ export function Scene() {
             if (enemyAlive.current[e]) enemiesRef.current?.setEnemy(e, layout[e]);
           }
           nextDiveAt.current = DIVE.graceAfterWaveStart + Math.random() * (DIVE.cooldownMax - DIVE.cooldownMin);
+
+          // A boss fight in progress: push it back to its own starting
+          // position/timers the same way the formation just was, but its
+          // health is untouched — only position resets on a life lost,
+          // never progress, matching the ordinary formation's own rule
+          // (kills/shield damage also survive this reset).
+          if (bossActive.current && bossRef.current) {
+            bossRef.current.position.set(0, (ARENA.minY + ARENA.maxY) / 2, FORMATION.startZ);
+            bossSweepDir.current = Math.random() < 0.5 ? -1 : 1;
+            bossNextFireAt.current =
+              BOSS.fireIntervalMin + Math.random() * (BOSS.fireIntervalMax - BOSS.fireIntervalMin);
+          }
         }
       }
 
@@ -974,6 +1088,33 @@ export function Scene() {
           playerBolts.current.active[i] = false;
           mesh.visible = false;
           continue;
+        }
+
+        if (bossActive.current && bossRef.current) {
+          const boss = bossRef.current;
+          const dx = mesh.position.x - boss.position.x;
+          const dy = mesh.position.y - boss.position.y;
+          const dz = mesh.position.z - boss.position.z;
+          if (dx * dx + dy * dy + dz * dz <= BOSS.hitRadius ** 2) {
+            playerBolts.current.active[i] = false;
+            mesh.visible = false;
+            // One hit = one point of boss health, same "every hit counts
+            // the same" rule as a regular enemy's own one-shot death — the
+            // boss is just a much bigger health pool, not tougher per hit.
+            bossHealth.current = Math.max(0, bossHealth.current - 1);
+            useGameStore.getState().damageBoss(1);
+            explosions.trigger(mesh.position.clone(), COLORS.amber);
+            sound.enemyHit();
+            if (bossHealth.current <= 0) {
+              explosions.trigger(boss.position.clone(), COLORS.accent);
+              boss.visible = false;
+              bossActive.current = false;
+              useGameStore.getState().defeatBoss(BOSS.killScore);
+              spawnWave(formation, useGameStore.getState().wave);
+              sound.waveClear();
+            }
+            continue;
+          }
         }
 
         for (let e = 0; e < ENEMY_COUNT; e++) {
@@ -1151,6 +1292,13 @@ export function Scene() {
         <pointLight color={COLORS.amber} intensity={3} distance={14} position={[0, 3.7, 1]} />
         <Enemies ref={enemiesRef} count={ENEMY_COUNT} />
       </group>
+
+      {/* Plain world-space position, unlike Enemies above — there's only
+          ever one of these at a time, so it doesn't need a shared parent
+          group's transform the way 40 instanced enemies share the
+          formation's sway/advance. Hidden by default; spawnWave shows it
+          only during a boss wave (see BOSS in config/constants.ts). */}
+      <Boss ref={bossRef} />
 
       {playerBolts.current.refs.map((ref, i) => (
         <Projectile key={`p${i}`} ref={ref as React.RefObject<THREE.Mesh>} color={COLORS.phosphor} />

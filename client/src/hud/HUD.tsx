@@ -55,10 +55,15 @@ export function HUD({
     highScore,
     highWave,
     paused,
+    bossActive,
+    bossHealth,
+    bossMaxHealth,
     reset,
     clearBanner,
     togglePause,
   } = useGameStore();
+
+  const bossHealthPct = bossMaxHealth > 0 ? Math.round((bossHealth / bossMaxHealth) * 100) : 0;
 
   const healthPct = Math.round((health / SHIP.maxHealth) * 100);
 
@@ -137,10 +142,16 @@ export function HUD({
           <span className="hud-label">גל</span>
           <span className="hud-value hud-value--wave">{wave}</span>
         </div>
-        <div className="hud-stat hud-stat--num">
-          <span className="hud-label">נותרו</span>
-          <span className="hud-value">{enemiesRemaining}</span>
-        </div>
+        {/* Swapped for the boss health bar below during a boss wave — "40
+            enemies remaining" has no equivalent meaning once the whole
+            formation is replaced by one large target (see BOSS in
+            config/constants.ts). */}
+        {!bossActive && (
+          <div className="hud-stat hud-stat--num">
+            <span className="hud-label">נותרו</span>
+            <span className="hud-value">{enemiesRemaining}</span>
+          </div>
+        )}
         <div className="hud-stat hud-stat--num">
           <span className="hud-label">זמן</span>
           <span className="hud-value hud-value--mono">{elapsed}</span>
@@ -181,6 +192,21 @@ export function HUD({
           )}
         </div>
       </div>
+
+      {/* Persists for the whole fight (unlike the transient wave-banner
+          above) — a boss health bar is the one stat worth keeping visible
+          without a glance at the corner, same reasoning as the player's
+          own health bar. */}
+      {bossActive && status === "playing" && (
+        <div className="boss-bar">
+          <span className="boss-bar-label">
+            בוס <span className="boss-bar-value">{bossHealthPct}%</span>
+          </span>
+          <div className="boss-bar-track">
+            <div className="boss-bar-fill" style={{ width: `${bossHealthPct}%` }} />
+          </div>
+        </div>
+      )}
 
       {bannerText && (
         <div className="wave-banner" key={bannerText}>

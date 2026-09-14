@@ -1,5 +1,5 @@
 import { create } from "zustand";
-import { COMBO, SHIP } from "../config/constants";
+import { BOSS, COMBO, SHIP } from "../config/constants";
 
 // "cleared" was a dead end — no such terminal state anymore. Beating a wave
 // spawns a new, harder one (see Scene's spawnWave); only running out of
@@ -73,6 +73,15 @@ interface GameState {
   // the manual toggle + overlay.
   paused: boolean;
 
+  // Boss waves (see BOSS in config/constants.ts) replace the normal grid
+  // formation entirely with one large, multi-hit enemy — HUD shows a boss
+  // health bar instead of the usual "enemies remaining" stat whenever this
+  // is true. bossHealth/bossMaxHealth exist purely for that bar; Scene's
+  // own ref is still the source of truth the simulation itself reads.
+  bossActive: boolean;
+  bossHealth: number;
+  bossMaxHealth: number;
+
   damageShip: (amount: number) => void;
   /** Scene calls this when the wave's front line crosses FORMATION.invadeZ.
    * Distinct from damageShip: this always costs a full life outright (no
@@ -90,6 +99,15 @@ interface GameState {
   pause: () => void;
   resume: () => void;
   togglePause: () => void;
+  // Called once when a boss wave spawns (health === maxHealth) and again on
+  // every hit that lands (health decreasing) — see damageBoss for the hit
+  // case specifically, this is the general setter Scene uses for both.
+  setBoss: (active: boolean, health: number, maxHealth: number) => void;
+  damageBoss: (amount: number) => void;
+  /** The boss's health just reached 0 — awards its score in one flat shot
+   * (deliberately NOT routed through registerKill's combo multiplier, which
+   * doesn't fit a single one-off reward) and clears bossActive. */
+  defeatBoss: (scoreReward: number) => void;
   reset: () => void;
 }
 
@@ -108,6 +126,9 @@ const initial = {
   weaponExpiresAt: 0,
   invulnerableUntil: 0,
   paused: false,
+  bossActive: false,
+  bossHealth: 0,
+  bossMaxHealth: 0,
 };
 
 /** Compares against the currently-stored high score/wave, persists a new
@@ -213,9 +234,19 @@ export const useGameStore = create<GameState>((set, get) => ({
 
   // Score/health carry over — only the wave counter and a transient HUD
   // banner change here. Scene calls this once the last enemy in a wave
-  // dies, then spawns the next (harder) wave itself.
+  // dies, then spawns the next (harder) wave itself. Warns ahead of time
+  // when that next wave is a boss wave (see BOSS.waveInterval) — arriving
+  // at a full-screen enemy with zero warning read as unfair rather than
+  // exciting when this didn't distinguish the two.
   advanceWave: () =>
-    set((s) => ({ wave: s.wave + 1, bannerText: `גל ${s.wave} נהדף — גל ${s.wave + 1} מתקרב` })),
+    set((s) => {
+      const nextWave = s.wave + 1;
+      const bannerText =
+        nextWave % BOSS.waveInterval === 0
+          ? `⚠ בוס מתקרב — גל ${nextWave}`
+          : `גל ${s.wave} נהדף — גל ${nextWave} מתקרב`;
+      return { wave: nextWave, bannerText };
+    }),
 
   clearBanner: () => set({ bannerText: null }),
 
@@ -228,6 +259,25 @@ export const useGameStore = create<GameState>((set, get) => ({
     if (s.status !== "playing") return; // nothing to pause on the game-over screen
     set({ paused: !s.paused });
   },
+
+  setBoss: (active, health, maxHealth) => set({ bossActive: active, bossHealth: health, bossMaxHealth: maxHealth }),
+  damageBoss: (amount) => set((s) => ({ bossHealth: Math.max(0, s.bossHealth - amount) })),
+  // Bumps the wave counter itself (taking over advanceWave's usual job for
+  // this one transition) rather than also calling advanceWave — that would
+  // set ITS OWN banner text right after this one, silently discarding the
+  // "boss defeated" message before anyone ever saw it (both happen inside
+  // the same synchronous tick, so only the last set() would ever render).
+  defeatBoss: (scoreReward) =>
+    set((s) => {
+      const nextWave = s.wave + 1;
+      return {
+        bossActive: false,
+        bossHealth: 0,
+        score: s.score + scoreReward,
+        wave: nextWave,
+        bannerText: `הבוס הובס! +${scoreReward} נקודות — גל ${nextWave} מתקרב`,
+      };
+    }),
 
   // Reuses `initial` but stamps a fresh start time — reset() can fire long
   // after module load (every "שחק שוב"), so the frozen initial.runStartedAt
