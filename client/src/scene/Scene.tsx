@@ -350,6 +350,13 @@ export function Scene() {
   const bossHealth = useRef(0);
   const bossNextFireAt = useRef(0);
   const bossSweepDir = useRef<1 | -1>(1);
+  // A short, sharp "recoil" scale-pop on every landed hit — distinct pacing
+  // from the slow telegraph swell above (this decays over ~0.15s instead of
+  // building over ~0.45s), giving a hit on the boss the same kind of
+  // tactile "that connected" feedback a regular enemy's own explosion+kill
+  // already has, which chipping away at one big health pool otherwise
+  // lacks entirely. Simtime-based, like bossNextFireAt — 0 means inactive.
+  const bossHitFlashUntil = useRef(0);
 
   // Camera shake: a decaying "trauma" scalar (0..1, see addShake) rather
   // than a one-shot animation — several hits landing close together should
@@ -547,6 +554,7 @@ export function Scene() {
       const maxHealth = BOSS.baseHealth + (encounterNumber - 1) * BOSS.healthGrowthPerEncounter;
       bossActive.current = true;
       bossHealth.current = maxHealth;
+      bossHitFlashUntil.current = 0;
       bossSweepDir.current = Math.random() < 0.5 ? -1 : 1;
       // Scheduled the same way columnNextFire is just above: a raw value,
       // implicitly relative to the simTime.current = 0 this function just
@@ -790,8 +798,10 @@ export function Scene() {
           bossActiveRef: bossActive,
           bossHealthRef: bossHealth,
           bossNextFireAtRef: bossNextFireAt,
+          bossHitFlashUntilRef: bossHitFlashUntil,
           camShakeRef: camShake,
           camera,
+          lockReticleRef: lockReticleRef.current,
           weaponRef,
           pickupsRef: pickups.current,
           playerBoltsRef: playerBolts.current,
@@ -1016,6 +1026,13 @@ export function Scene() {
         boss.rotation.y += delta * 0.15;
         boss.position.y = (ARENA.minY + ARENA.maxY) / 2 + Math.sin(simTime.current * 0.8) * 0.6;
 
+        // Two independent scale effects combine multiplicatively into one
+        // final transform: the slow telegraph swell (below) building toward
+        // each barrage, and the sharp per-hit recoil pop (see
+        // bossHitFlashUntil's own comment) — unrelated timings, so neither
+        // resets or fights the other by sharing a single scale write.
+        let scaleMultiplier = 1;
+
         // Telegraph: a visible "winding up" swell in the last
         // BOSS.telegraphDuration seconds before each barrage — an
         // ever-growing scale pulse (transform-only, same trick as the
@@ -1026,15 +1043,24 @@ export function Scene() {
         const timeToFire = bossNextFireAt.current - simTime.current;
         if (timeToFire > 0 && timeToFire <= BOSS.telegraphDuration) {
           const chargeT = 1 - timeToFire / BOSS.telegraphDuration;
-          boss.scale.setScalar(BOSS.visualScale * (1 + BOSS.telegraphPulse * chargeT * chargeT));
-        } else {
-          boss.scale.setScalar(BOSS.visualScale);
+          scaleMultiplier *= 1 + BOSS.telegraphPulse * chargeT * chargeT;
         }
+
+        const hitFlashRemaining = bossHitFlashUntil.current - simTime.current;
+        if (hitFlashRemaining > 0) {
+          scaleMultiplier *= 1 + 0.12 * (hitFlashRemaining / 0.15);
+        }
+
+        boss.scale.setScalar(BOSS.visualScale * scaleMultiplier);
 
         if (simTime.current >= bossNextFireAt.current) {
           bossNextFireAt.current =
             simTime.current + BOSS.fireIntervalMin + Math.random() * (BOSS.fireIntervalMax - BOSS.fireIntervalMin);
-          boss.scale.setScalar(BOSS.visualScale); // reset right away — see the telegraph block above
+          // No explicit scale reset needed here — the combined
+          // telegraph+hit-flash multiplier above already recomputes the
+          // correct scale fresh every frame from these refs directly, so
+          // rescheduling bossNextFireAt is enough to fall out of the
+          // telegraph condition on its own next frame.
           // A fanned barrage, not a single shot — the boss occupying one
           // enemy "slot" worth of danger the whole fight would otherwise
           // undersell replacing 40 enemies with it.
@@ -1189,10 +1215,32 @@ export function Scene() {
             lockedEnemy = e;
           }
         }
-        if (lockedEnemy >= 0) {
+        // The boss counts too — using its own (much bigger) hit radius as
+        // the lock threshold instead of LOCK_RADIUS, which is tuned to a
+        // regular enemy's small hitbox and would make an obviously-
+        // hittable giant target look "not locked" almost the entire fight.
+        // (No regular enemy is ever alive during a boss wave, so this can
+        // never conflict with the loop above — it only ever fires as a
+        // fallback.)
+        let lockedIsBoss = false;
+        if (lockedEnemy < 0 && bossActive.current && bossRef.current) {
+          const dx = ship.position.x - bossRef.current.position.x;
+          const dy = ship.position.y - bossRef.current.position.y;
+          if (dx * dx + dy * dy <= BOSS.hitRadius ** 2) lockedIsBoss = true;
+        }
+
+        if (lockedIsBoss && bossRef.current) {
+          lockReticleRef.current.visible = true;
+          lockReticleRef.current.position.copy(bossRef.current.position);
+          // The reticle's own geometry is sized to wrap a regular enemy's
+          // small silhouette — left at that size it would look lost inside
+          // the boss's much bigger one, so it scales up to roughly match.
+          lockReticleRef.current.scale.setScalar(BOSS.visualScale / 1.8);
+        } else if (lockedEnemy >= 0) {
           const dive = diveWorldPos.current[lockedEnemy];
           const local = layout[lockedEnemy];
           lockReticleRef.current.visible = true;
+          lockReticleRef.current.scale.setScalar(1);
           lockReticleRef.current.position.set(
             dive ? dive.x : formation.position.x + local[0],
             dive ? dive.y : formation.position.y + local[1],
@@ -1272,7 +1320,16 @@ export function Scene() {
             bossHealth.current = Math.max(0, bossHealth.current - 1);
             useGameStore.getState().damageBoss(1);
             explosions.trigger(mesh.position.clone(), COLORS.amber);
+            explosions.trigger(mesh.position.clone(), COLORS.enemyBolt);
             sound.enemyHit();
+            // A big, mostly-stationary target that just keeps absorbing
+            // hits with no feedback beyond a small spark and a shrinking
+            // number reads as dull — the recoil scale-pop (see
+            // bossHitFlashUntil's own comment) plus a small shake gives
+            // every landed hit real, immediate weight, the same way a
+            // regular enemy's own explosion+kill already does in one shot.
+            bossHitFlashUntil.current = simTime.current + 0.15;
+            addShake(0.12);
             if (bossHealth.current <= 0) {
               explosions.trigger(boss.position.clone(), COLORS.accent);
               boss.visible = false;
