@@ -8,6 +8,8 @@ import { HUD } from "./hud/HUD";
 import { TouchControls } from "./hud/TouchControls";
 import { RotateDevicePrompt } from "./hud/RotateDevicePrompt";
 import { isTouchDevice, useIsPortrait, useIsFullscreen, toggleFullscreen } from "./hooks/useMobileLayout";
+import { useAutoPause } from "./hooks/useAutoPause";
+import { useGameStore } from "./state/gameStore";
 
 // Read once at module load — touch capability doesn't change mid-session,
 // so there's no reason to recompute it on every render (see its own doc
@@ -28,9 +30,12 @@ export default function App() {
     if (!isPortrait) setRotateDismissed(false);
   }, [isPortrait]);
 
+  useAutoPause();
+
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
       if (e.code === "Digit3") setAnaglyph((v) => !v);
+      if (e.code === "Escape") useGameStore.getState().togglePause();
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);

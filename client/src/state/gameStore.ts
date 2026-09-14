@@ -14,6 +14,30 @@ const WEAPON_LABELS: Record<WeaponKind, string> = {
   rapid: "אש מהירה",
 };
 
+const HIGH_SCORE_KEY = "nexus-high-score";
+const HIGH_WAVE_KEY = "nexus-high-wave";
+
+function loadHighScore(): { score: number; wave: number } {
+  try {
+    return {
+      score: Number(localStorage.getItem(HIGH_SCORE_KEY)) || 0,
+      wave: Number(localStorage.getItem(HIGH_WAVE_KEY)) || 0,
+    };
+  } catch {
+    return { score: 0, wave: 0 }; // private browsing / storage disabled
+  }
+}
+
+function saveHighScore(score: number, wave: number) {
+  try {
+    localStorage.setItem(HIGH_SCORE_KEY, String(score));
+    localStorage.setItem(HIGH_WAVE_KEY, String(wave));
+  } catch {
+    // Nothing to do if storage is unavailable — the in-memory value this
+    // session still works, it just won't survive a reload.
+  }
+}
+
 interface GameState {
   status: GameStatus;
   health: number;
@@ -40,6 +64,14 @@ interface GameState {
   // is before this, and Scene lets enemy bolts pass through the ship
   // visually rather than colliding, for the same window.
   invulnerableUntil: number;
+  // Persisted across runs (localStorage) — NOT part of `initial` below, so
+  // reset() (a shallow merge, not a replace) never touches these.
+  highScore: number;
+  highWave: number;
+  // Freezes Scene's whole simulation branch without ending the run — see
+  // useAutoPause.ts for the tab-blur/visibility trigger, and HUD.tsx for
+  // the manual toggle + overlay.
+  paused: boolean;
 
   damageShip: (amount: number) => void;
   /** Scene calls this when the wave's front line crosses FORMATION.invadeZ.
@@ -55,6 +87,9 @@ interface GameState {
   setEnemiesRemaining: (count: number) => void;
   advanceWave: () => void;
   clearBanner: () => void;
+  pause: () => void;
+  resume: () => void;
+  togglePause: () => void;
   reset: () => void;
 }
 
@@ -72,10 +107,28 @@ const initial = {
   weapon: "base" as WeaponKind,
   weaponExpiresAt: 0,
   invulnerableUntil: 0,
+  paused: false,
 };
+
+/** Compares against the currently-stored high score/wave, persists a new
+ * one if either was beaten, and returns the (possibly updated) pair — used
+ * right as a run ends, since that's the only moment this run's numbers are
+ * truly final. */
+function settleHighScore(score: number, wave: number, prevHigh: { highScore: number; highWave: number }) {
+  const highScore = Math.max(prevHigh.highScore, score);
+  const highWave = Math.max(prevHigh.highWave, wave);
+  if (highScore !== prevHigh.highScore || highWave !== prevHigh.highWave) {
+    saveHighScore(highScore, highWave);
+  }
+  return { highScore, highWave };
+}
+
+const storedHigh = loadHighScore();
 
 export const useGameStore = create<GameState>((set, get) => ({
   ...initial,
+  highScore: storedHigh.score,
+  highWave: storedHigh.wave,
 
   damageShip: (amount) => {
     const s = get();
@@ -95,7 +148,8 @@ export const useGameStore = create<GameState>((set, get) => ({
         bannerText: `הפגיעה הייתה קטלנית — נותרו ${lives} חיים`,
       });
     } else {
-      set({ health: 0, status: "gameover" });
+      const high = settleHighScore(s.score, s.wave, s);
+      set({ health: 0, status: "gameover", ...high });
     }
   },
 
@@ -113,7 +167,8 @@ export const useGameStore = create<GameState>((set, get) => ({
       });
       return true;
     }
-    set({ health: 0, status: "gameover" });
+    const high = settleHighScore(s.score, s.wave, s);
+    set({ health: 0, status: "gameover", ...high });
     return false;
   },
 
@@ -162,8 +217,19 @@ export const useGameStore = create<GameState>((set, get) => ({
 
   clearBanner: () => set({ bannerText: null }),
 
+  pause: () => {
+    if (get().status === "playing") set({ paused: true });
+  },
+  resume: () => set({ paused: false }),
+  togglePause: () => {
+    const s = get();
+    if (s.status !== "playing") return; // nothing to pause on the game-over screen
+    set({ paused: !s.paused });
+  },
+
   // Reuses `initial` but stamps a fresh start time — reset() can fire long
   // after module load (every "שחק שוב"), so the frozen initial.runStartedAt
-  // would otherwise make the timer start already stale.
+  // would otherwise make the timer start already stale. highScore/highWave
+  // aren't part of `initial`, so this shallow merge leaves them untouched.
   reset: () => set({ ...initial, runStartedAt: Date.now() }),
 }));

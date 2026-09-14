@@ -52,8 +52,12 @@ export function HUD({
     comboExpiresAt,
     weapon,
     weaponExpiresAt,
+    highScore,
+    highWave,
+    paused,
     reset,
     clearBanner,
+    togglePause,
   } = useGameStore();
 
   const healthPct = Math.round((health / SHIP.maxHealth) * 100);
@@ -117,7 +121,9 @@ export function HUD({
           </span>
         </div>
         <div className="hud-stat hud-stat--num">
-          <span className="hud-label">ניקוד</span>
+          <span className="hud-label">
+            ניקוד <span className="hud-label-value">שיא: {highScore.toLocaleString("he-IL")}</span>
+          </span>
           <span className="hud-value">
             {score.toLocaleString("he-IL")}
             {displayMultiplier > 1 && (
@@ -168,12 +174,26 @@ export function HUD({
               {compact ? "⛶" : isFullscreen ? "⛶ צא ממסך מלא" : "⛶ מסך מלא"}
             </button>
           )}
+          {status === "playing" && (
+            <button className="anaglyph-toggle" onClick={togglePause} data-active={paused}>
+              {compact ? "⏸" : "⏸ השהה"}
+            </button>
+          )}
         </div>
       </div>
 
       {bannerText && (
         <div className="wave-banner" key={bannerText}>
           {bannerText}
+        </div>
+      )}
+
+      {paused && status === "playing" && (
+        <div className="hud-overlay">
+          <div className="hud-panel">
+            <h1>מושהה</h1>
+            <button onClick={togglePause}>המשך</button>
+          </div>
         </div>
       )}
 
@@ -184,6 +204,17 @@ export function HUD({
             <p>
               הגעת לגל <b>{wave}</b> · ניקוד סופי: <b>{score.toLocaleString("he-IL")}</b>
             </p>
+            {/* The store already settled highScore against this run's final
+                score before flipping to "gameover" (see damageShip/
+                handleInvasion) — so by the time this renders, score having
+                caught up to highScore means THIS run is what set it. */}
+            {score > 0 && score >= highScore ? (
+              <p className="hud-panel-record">שיא חדש! 🏆</p>
+            ) : (
+              <p className="hud-panel-sub">
+                שיא: {highScore.toLocaleString("he-IL")} (גל {highWave})
+              </p>
+            )}
             <button onClick={reset}>שחק שוב</button>
           </div>
         </div>

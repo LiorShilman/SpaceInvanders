@@ -533,7 +533,7 @@ export function Scene() {
 
   useFrame((_state, rawDelta) => {
     const delta = Math.min(rawDelta, 1 / 30); // clamp to avoid huge steps on tab-switch
-    const status = useGameStore.getState().status;
+    const { status, paused } = useGameStore.getState();
     const ship = shipRef.current;
     const formation = formationRef.current;
     if (!ship || !formation) return;
@@ -546,7 +546,13 @@ export function Scene() {
     }
     prevStatus.current = status;
 
-    if (status === "playing") {
+    // paused freezes the ENTIRE simulation branch below (movement, firing,
+    // enemy advance, every timer) without touching status — the run is
+    // still "playing" underneath, just not ticking. Kept as a completely
+    // separate flag from status rather than a third GameStatus value so
+    // every existing `status === "playing"` check elsewhere (HUD,
+    // gameStore) keeps meaning exactly what it already did.
+    if (status === "playing" && !paused) {
       simTime.current += delta;
 
       // Wall-clock, not simTime — respawn invulnerability is a real-time
