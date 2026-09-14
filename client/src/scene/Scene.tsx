@@ -391,6 +391,19 @@ export function Scene() {
     setShipAccentColor(ship, "#ffffff");
   }
 
+  // Hitstop ("bullet time"): the whole simulation crawls to near-standstill
+  // for a brief wall-clock window — reserved for the single biggest,
+  // rarest moment in a run (defeating a boss) rather than every hit, so it
+  // reads as "that mattered" instead of constantly interrupting a
+  // fast-paced shooter's own flow. Scaling `delta` itself (see its
+  // computation at the top of useFrame) is deliberately the ONE place this
+  // is implemented — every system already reads delta for its own
+  // per-frame movement, so slowing it down there automatically slows
+  // everything (ship, bolts, the boss's own explosion, even the camera
+  // shake this same moment also triggers) without needing to touch any of
+  // those systems individually.
+  const hitstopUntil = useRef(0);
+
   const playerBolts = useRef<Pool>(makePool(PROJECTILE.poolSize, -1, PROJECTILE.playerSpeed));
   const enemyBolts = useRef<Pool>(makePool(PROJECTILE.poolSize, 1, PROJECTILE.enemySpeed));
   const pickups = useRef<PickupSlot[]>(makePickupPool(PICKUP_POOL_SIZE));
@@ -744,7 +757,10 @@ export function Scene() {
   }
 
   useFrame((_state, rawDelta) => {
-    const delta = Math.min(rawDelta, 1 / 30); // clamp to avoid huge steps on tab-switch
+    const clampedDelta = Math.min(rawDelta, 1 / 30); // clamp to avoid huge steps on tab-switch
+    // Hitstop: see hitstopUntil's own comment — crawl to ~4% speed for a
+    // brief window right after a boss dies, rather than the usual full rate.
+    const delta = Date.now() < hitstopUntil.current ? clampedDelta * 0.04 : clampedDelta;
     const { status, paused } = useGameStore.getState();
     const ship = shipRef.current;
     const formation = formationRef.current;
@@ -799,6 +815,7 @@ export function Scene() {
           bossHealthRef: bossHealth,
           bossNextFireAtRef: bossNextFireAt,
           bossHitFlashUntilRef: bossHitFlashUntil,
+          hitstopUntilRef: hitstopUntil,
           camShakeRef: camShake,
           camera,
           lockReticleRef: lockReticleRef.current,
@@ -1338,6 +1355,10 @@ export function Scene() {
               spawnWave(formation, useGameStore.getState().wave);
               sound.waveClear();
               addShake(0.9);
+              // Bullet time for the single biggest moment in a run — see
+              // hitstopUntil's own comment for why this is reserved for
+              // exactly this event and nothing more frequent.
+              hitstopUntil.current = now + 450;
             }
             continue;
           }
