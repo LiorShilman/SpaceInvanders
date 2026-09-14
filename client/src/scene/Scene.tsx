@@ -366,6 +366,21 @@ export function Scene() {
     camShake.current = Math.min(1, camShake.current + amount);
   }
 
+  // A brief white flash on the ship's own accent parts (see setShipAccentColor)
+  // when a glancing hit costs health but not a whole life — the one damage
+  // outcome that otherwise left the ship completely visually unchanged (a
+  // lost life already gets the much stronger respawn-invulnerability blink;
+  // this fills the gap below that). 0 = no flash in progress; otherwise a
+  // wall-clock deadline to revert back to whatever accent color SHOULD be
+  // showing (base phosphor, or the active weapon's tint).
+  const hitFlashUntil = useRef(0);
+
+  /** Triggers the brief white hit-flash (see hitFlashUntil's own comment). */
+  function addHitFlash(ship: THREE.Group, now: number) {
+    hitFlashUntil.current = now + 120;
+    setShipAccentColor(ship, "#ffffff");
+  }
+
   const playerBolts = useRef<Pool>(makePool(PROJECTILE.poolSize, -1, PROJECTILE.playerSpeed));
   const enemyBolts = useRef<Pool>(makePool(PROJECTILE.poolSize, 1, PROJECTILE.enemySpeed));
   const pickups = useRef<PickupSlot[]>(makePickupPool(PICKUP_POOL_SIZE));
@@ -817,6 +832,17 @@ export function Scene() {
         useGameStore.getState().revertWeapon();
       }
 
+      // --- hit-flash revert: back to whichever accent color should
+      // actually be showing right now (base, or the current weapon's tint)
+      // once the brief white flash window (see addHitFlash) ends. Runs
+      // after the weapon-expiry check above so a flash that happens to
+      // straddle the exact same frame a weapon expires still ends up
+      // showing the correct post-expiry color, not a stale one.
+      if (hitFlashUntil.current > 0 && now >= hitFlashUntil.current) {
+        hitFlashUntil.current = 0;
+        setShipAccentColor(ship, weaponRef.current.kind === "base" ? COLORS.phosphor : COLORS.pickupWeapon);
+      }
+
       // --- player firing ---------------------------------------------------
       fireCooldown.current -= delta;
       if (input.current.fire && fireCooldown.current <= 0) {
@@ -987,9 +1013,25 @@ export function Scene() {
         boss.rotation.y += delta * 0.15;
         boss.position.y = (ARENA.minY + ARENA.maxY) / 2 + Math.sin(simTime.current * 0.8) * 0.6;
 
+        // Telegraph: a visible "winding up" swell in the last
+        // BOSS.telegraphDuration seconds before each barrage — an
+        // ever-growing scale pulse (transform-only, same trick as the
+        // Heavy variant's own bigger scale, so no material plumbing is
+        // needed) that peaks exactly at the instant it fires, then snaps
+        // back to normal. Gives a real read-and-react dodge window instead
+        // of the barrage just appearing with zero warning.
+        const timeToFire = bossNextFireAt.current - simTime.current;
+        if (timeToFire > 0 && timeToFire <= BOSS.telegraphDuration) {
+          const chargeT = 1 - timeToFire / BOSS.telegraphDuration;
+          boss.scale.setScalar(BOSS.visualScale * (1 + BOSS.telegraphPulse * chargeT * chargeT));
+        } else {
+          boss.scale.setScalar(BOSS.visualScale);
+        }
+
         if (simTime.current >= bossNextFireAt.current) {
           bossNextFireAt.current =
             simTime.current + BOSS.fireIntervalMin + Math.random() * (BOSS.fireIntervalMax - BOSS.fireIntervalMin);
+          boss.scale.setScalar(BOSS.visualScale); // reset right away — see the telegraph block above
           // A fanned barrage, not a single shot — the boss occupying one
           // enemy "slot" worth of danger the whole fight would otherwise
           // undersell replacing 40 enemies with it.
@@ -1352,6 +1394,7 @@ export function Scene() {
           } else {
             sound.playerHit();
             addShake(0.22);
+            addHitFlash(ship, now);
           }
         }
       }

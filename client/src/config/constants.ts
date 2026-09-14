@@ -357,6 +357,12 @@ export const BOSS = {
   fireIntervalMax: 2,
   spreadCount: 5, // bolts per barrage, fanned across spreadWidth
   spreadWidth: 3.6,
+  // A visible "winding up" tell in the second before each barrage — a
+  // slow, ever-growing swell (see Scene.tsx's own use of this) rather than
+  // the barrage just appearing with zero warning, so dodging it is a real
+  // read-and-react skill instead of a memorization/luck check.
+  telegraphDuration: 0.45,
+  telegraphPulse: 0.1,
   // Generously sized to its own visualScale below — a big target, meant to
   // be easy to land shots on (the challenge is surviving its barrages and
   // sweep, not pixel-precise aim).
