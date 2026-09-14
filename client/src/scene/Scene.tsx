@@ -4,6 +4,7 @@ import * as THREE from "three";
 import {
   ARENA,
   COLORS,
+  DIVE,
   FORMATION,
   HIT_RADIUS,
   PICKUP,
@@ -313,6 +314,20 @@ export function Scene() {
   const columnNextFire = useRef<number[]>(Array.from({ length: FORMATION.cols }, () => 0));
   const aliveCount = useRef(ENEMY_COUNT);
 
+  // Diving/flanking (see DIVE in config/constants.ts): diveState tracks
+  // which enemies are currently mid-dive and their own launch data;
+  // diveWorldPos mirrors just the CURRENT frame's computed world position
+  // for whichever of those are active, null otherwise — every other spot
+  // that needs an enemy's world position (invasion check, lock reticle,
+  // player-bolt hit-test) reads this first and only falls back to the
+  // ordinary formation-relative math when it's null. nextDiveAt is a single
+  // global cooldown gate, not one per enemy.
+  const diveState = useRef<
+    Array<{ startTime: number; startPos: THREE.Vector3; lateralSign: 1 | -1; fired: boolean } | null>
+  >(Array.from({ length: ENEMY_COUNT }, () => null));
+  const diveWorldPos = useRef<Array<THREE.Vector3 | null>>(Array.from({ length: ENEMY_COUNT }, () => null));
+  const nextDiveAt = useRef(DIVE.graceAfterWaveStart);
+
   const playerBolts = useRef<Pool>(makePool(PROJECTILE.poolSize, -1, PROJECTILE.playerSpeed));
   const enemyBolts = useRef<Pool>(makePool(PROJECTILE.poolSize, 1, PROJECTILE.enemySpeed));
   const pickups = useRef<PickupSlot[]>(makePickupPool(PICKUP_POOL_SIZE));
@@ -420,6 +435,16 @@ export function Scene() {
 
     fireCooldown.current = 0;
     simTime.current = 0;
+
+    // Every enemy's transform was just explicitly set above (alive or
+    // hidden) regardless of whatever it was doing in the previous wave, so
+    // no extra setEnemy call is needed here — just the bookkeeping, plus a
+    // fresh grace period before the new wave's first diver can launch.
+    for (let e = 0; e < ENEMY_COUNT; e++) {
+      diveState.current[e] = null;
+      diveWorldPos.current[e] = null;
+    }
+    nextDiveAt.current = DIVE.graceAfterWaveStart + Math.random() * (DIVE.cooldownMax - DIVE.cooldownMin);
   }
 
   /**
@@ -577,6 +602,9 @@ export function Scene() {
           spawnWaveDebug: (wave: number) => spawnWave(formation, wave),
           layout,
           enemyAliveArr: enemyAlive.current,
+          diveStateArr: diveState.current,
+          diveWorldPosArr: diveWorldPos.current,
+          nextDiveAtRef: nextDiveAt,
           weaponRef,
           pickupsRef: pickups.current,
           playerBoltsRef: playerBolts.current,
@@ -654,19 +682,132 @@ export function Scene() {
         FORMATION.frontLineZ,
       );
 
+      // --- enemy diving/flanking: launch a new one on cooldown ---------------
+      // See DIVE's own comment in config/constants.ts for the overall shape.
+      // A global cooldown gate, not one per enemy — how often "something is
+      // diving" reads the same regardless of how many enemies are left.
+      if (simTime.current >= nextDiveAt.current) {
+        let activeDives = 0;
+        for (let e = 0; e < ENEMY_COUNT; e++) if (diveState.current[e]) activeDives++;
+        if (activeDives < DIVE.maxConcurrent) {
+          const candidates: number[] = [];
+          for (let e = 0; e < ENEMY_COUNT; e++) {
+            if (enemyAlive.current[e] && !diveState.current[e]) candidates.push(e);
+          }
+          if (candidates.length > 0) {
+            const chosen = candidates[Math.floor(Math.random() * candidates.length)];
+            const local = layout[chosen];
+            diveState.current[chosen] = {
+              startTime: simTime.current,
+              startPos: new THREE.Vector3(
+                formation.position.x + local[0],
+                formation.position.y + local[1],
+                formation.position.z + local[2],
+              ),
+              lateralSign: Math.random() < 0.5 ? -1 : 1,
+              fired: false,
+            };
+          }
+        }
+        // Rescheduled unconditionally even when no candidate was free (every
+        // slot alive already diving, or the whole wave dead) — the next
+        // check just tries again later rather than spamming this branch's
+        // O(ENEMY_COUNT) scan every single frame.
+        nextDiveAt.current = simTime.current + DIVE.cooldownMin + Math.random() * (DIVE.cooldownMax - DIVE.cooldownMin);
+      }
+
+      // --- enemy diving/flanking: advance every in-progress dive --------------
+      // Diving enemies leave the formation group's shared transform behind
+      // (its sway/advance no longer applies to them — see the launch block
+      // above), so each needs its own explicit per-frame instance update
+      // instead. diveWorldPos is written here and read by every other block
+      // below that needs an enemy's actual current position.
+      for (let e = 0; e < ENEMY_COUNT; e++) {
+        const dive = diveState.current[e];
+        if (!dive) continue;
+        if (!enemyAlive.current[e]) {
+          // Killed mid-dive (by the player-bolt hit-test further down, on an
+          // earlier frame) — already hidden there; just stop tracking it.
+          diveState.current[e] = null;
+          diveWorldPos.current[e] = null;
+          continue;
+        }
+        const t = (simTime.current - dive.startTime) / DIVE.duration;
+        if (t >= 1) {
+          // Loop complete — snap back exactly onto the formation's own
+          // layout slot (the curve already ends there at t=1; this just
+          // removes any floating-point drift) and stop updating it — it
+          // rides on the formation group's transform again from here on.
+          diveState.current[e] = null;
+          diveWorldPos.current[e] = null;
+          enemiesRef.current?.setEnemy(e, layout[e]);
+          continue;
+        }
+
+        const local = layout[e];
+        // The formation keeps moving while this dive is in progress, so the
+        // "return to slot" endpoint has to track its LIVE position, not a
+        // frozen one from launch time.
+        const target = new THREE.Vector3(
+          formation.position.x + local[0],
+          formation.position.y + local[1],
+          formation.position.z + local[2],
+        );
+        const pos = dive.startPos.clone().lerp(target, t);
+        // 0 at both ends, 1 at the midpoint — how far this frame pulls off
+        // the straight launch->return line toward the ship itself.
+        const swoop = Math.sin(t * Math.PI);
+        const divePoint = new THREE.Vector3(
+          ship.position.x + dive.lateralSign * 1.4,
+          ship.position.y + 1.2,
+          ship.position.z + 2.5,
+        );
+        pos.lerp(divePoint, swoop * DIVE.peakPull);
+        // A small extra wiggle, fading out toward the return — pure flair,
+        // doesn't affect where the curve actually ends up.
+        pos.x += Math.sin(t * Math.PI * 2) * DIVE.lateralWiggle * (1 - t);
+
+        diveWorldPos.current[e] = pos;
+        // setEnemy's pos/tilt are in the formation GROUP's own local space
+        // (see Enemies.tsx), same as every stationary member's layout
+        // entry — subtract the group's current position to convert this
+        // frame's world-space curve point back into that space.
+        enemiesRef.current?.setEnemy(
+          e,
+          [pos.x - formation.position.x, pos.y - formation.position.y, pos.z - formation.position.z],
+          [swoop * DIVE.maxTilt, 0, dive.lateralSign * swoop * DIVE.maxTilt * 0.6],
+        );
+
+        // One dedicated attack shot per dive, fired from wherever it
+        // actually is at the peak of the swoop — not on the normal
+        // per-column schedule (see the enemy-firing loop below, which
+        // excludes diving enemies from its column rotation for exactly
+        // this reason).
+        if (!dive.fired && t >= DIVE.firePhase) {
+          dive.fired = true;
+          spawn(enemyBolts.current, pos.clone());
+          sound.enemyFire();
+        }
+      }
+
       // "The wave broke through" means a real alive enemy actually reached
       // the ship (see HIT_RADIUS.enemyVsShip's own comment for why this
       // replaced a fixed depth-only check) — not an abstract line the
       // formation's own position crossed regardless of where the ship
       // happened to be standing. The formation is flat in z (every alive
       // enemy shares formation.position.z), so only x/y actually vary here.
+      // A diving enemy's real (possibly detached-from-formation) position
+      // takes priority when set — this is also exactly how a diver that
+      // swoops right up to the ship costs a life, through the same check a
+      // stationary formation reaching the front line already uses.
       let enemyReachedShip = false;
       for (let e = 0; e < ENEMY_COUNT; e++) {
         if (!enemyAlive.current[e]) continue;
+        const dive = diveWorldPos.current[e];
         const local = layout[e];
-        const ex = formation.position.x + local[0];
-        const ey = formation.position.y + local[1];
-        const ez = formation.position.z + local[2];
+        const ex = dive ? dive.x : formation.position.x + local[0];
+        const ey = dive ? dive.y : formation.position.y + local[1];
+        const ez = dive ? dive.z : formation.position.z + local[2];
         const dx = ship.position.x - ex;
         const dy = ship.position.y - ey;
         const dz = ship.position.z - ez;
@@ -716,6 +857,23 @@ export function Scene() {
           for (let col = 0; col < FORMATION.cols; col++) {
             columnNextFire.current[col] = fireMin + Math.random() * (fireMax - fireMin);
           }
+
+          // A diver mid-attack-run when this happened is holding a
+          // detached world position that has nothing to do with the
+          // formation's just-reset one — left alone, it would render as a
+          // ghost enemy stranded wherever the dive curve last put it,
+          // never receiving another per-frame update (nothing is tracking
+          // it as diving anymore) and never rejoining the formation
+          // group's own transform either. Snap it straight back into its
+          // ordinary layout slot, exactly like a freshly spawned wave does
+          // for every enemy.
+          for (let e = 0; e < ENEMY_COUNT; e++) {
+            if (!diveState.current[e]) continue;
+            diveState.current[e] = null;
+            diveWorldPos.current[e] = null;
+            if (enemyAlive.current[e]) enemiesRef.current?.setEnemy(e, layout[e]);
+          }
+          nextDiveAt.current = DIVE.graceAfterWaveStart + Math.random() * (DIVE.cooldownMax - DIVE.cooldownMin);
         }
       }
 
@@ -737,9 +895,10 @@ export function Scene() {
         let lockedDistSq = LOCK_RADIUS * LOCK_RADIUS;
         for (let e = 0; e < ENEMY_COUNT; e++) {
           if (!enemyAlive.current[e]) continue;
+          const dive = diveWorldPos.current[e];
           const local = layout[e];
-          const ex = formation.position.x + local[0];
-          const ey = formation.position.y + local[1];
+          const ex = dive ? dive.x : formation.position.x + local[0];
+          const ey = dive ? dive.y : formation.position.y + local[1];
           const dx = ship.position.x - ex;
           const dy = ship.position.y - ey;
           const distSq = dx * dx + dy * dy;
@@ -749,12 +908,13 @@ export function Scene() {
           }
         }
         if (lockedEnemy >= 0) {
+          const dive = diveWorldPos.current[lockedEnemy];
           const local = layout[lockedEnemy];
           lockReticleRef.current.visible = true;
           lockReticleRef.current.position.set(
-            formation.position.x + local[0],
-            formation.position.y + local[1],
-            formation.position.z + local[2],
+            dive ? dive.x : formation.position.x + local[0],
+            dive ? dive.y : formation.position.y + local[1],
+            dive ? dive.z : formation.position.z + local[2],
           );
         } else {
           lockReticleRef.current.visible = false;
@@ -765,13 +925,16 @@ export function Scene() {
       for (let col = 0; col < FORMATION.cols; col++) {
         if (simTime.current < columnNextFire.current[col]) continue;
 
-        // Any alive enemy in the column may take this shot (picked at
-        // random) — not always the frontmost, so fire doesn't monotonously
-        // come from the same row for as long as it survives.
+        // Any alive, non-diving enemy in the column may take this shot
+        // (picked at random) — not always the frontmost, so fire doesn't
+        // monotonously come from the same row for as long as it survives. A
+        // diving enemy is excluded: it's off flying its own attack run, not
+        // sitting at its formation slot, and already gets its own dedicated
+        // shot at the peak of that dive (see the dive-update block above).
         const aliveInColumn: number[] = [];
         for (let row = 0; row < FORMATION.rows; row++) {
           const idx = row * FORMATION.cols + col;
-          if (enemyAlive.current[idx]) aliveInColumn.push(idx);
+          if (enemyAlive.current[idx] && !diveState.current[idx]) aliveInColumn.push(idx);
         }
         if (aliveInColumn.length === 0) continue; // whole column is dead — silent
         const shooter = aliveInColumn[Math.floor(Math.random() * aliveInColumn.length)];
@@ -815,10 +978,11 @@ export function Scene() {
 
         for (let e = 0; e < ENEMY_COUNT; e++) {
           if (!enemyAlive.current[e]) continue;
+          const dive = diveWorldPos.current[e];
           const local = layout[e];
-          const ex = formation.position.x + local[0];
-          const ey = formation.position.y + local[1];
-          const ez = formation.position.z + local[2];
+          const ex = dive ? dive.x : formation.position.x + local[0];
+          const ey = dive ? dive.y : formation.position.y + local[1];
+          const ez = dive ? dive.z : formation.position.z + local[2];
           const dx = mesh.position.x - ex;
           const dy = mesh.position.y - ey;
           const dz = mesh.position.z - ez;
@@ -827,10 +991,19 @@ export function Scene() {
             enemiesRef.current?.setEnemy(e, null);
             playerBolts.current.active[i] = false;
             mesh.visible = false;
-            explosions.trigger(new THREE.Vector3(ex, ey, ez), COLORS.amber);
+            // Downing an enemy mid-dive gets a distinct cyan flash (instead
+            // of the usual amber) and a score bonus — see DIVE.killBonus's
+            // own comment for why: exposed and moving fast is a harder,
+            // more deserving target.
+            const wasDiving = dive !== null;
+            explosions.trigger(new THREE.Vector3(ex, ey, ez), wasDiving ? COLORS.accent : COLORS.amber);
             sound.enemyHit();
+            if (wasDiving) {
+              diveState.current[e] = null;
+              diveWorldPos.current[e] = null;
+            }
 
-            useGameStore.getState().registerKill();
+            useGameStore.getState().registerKill(wasDiving ? DIVE.killBonus : 0);
             spawnPickup(new THREE.Vector3(ex, ey, ez));
             aliveCount.current -= 1;
             useGameStore.getState().setEnemiesRemaining(aliveCount.current);

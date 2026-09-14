@@ -266,6 +266,43 @@ export const SHIELD_HEALTH_COLORS = {
   critical: "#ff4d4d", // <= 33% remain
 };
 
+// Enemy diving/flanking: periodically, one alive enemy breaks off from the
+// formation's shared sway/advance and flies its own attack run at the ship
+// before looping back to its slot — the "Diver/Flanker" behavior from
+// docs/GAME_PLAN.md's original outline. Deliberately reuses existing
+// systems rather than inventing new ones: a diver that actually reaches the
+// ship costs a life through the exact same HIT_RADIUS.enemyVsShip proximity
+// check the stationary formation already triggers, and its one attack shot
+// is a normal pooled enemy bolt, just fired from wherever it actually is
+// mid-dive instead of from a column's shared schedule.
+export const DIVE = {
+  // A global cooldown between dive LAUNCHES (not one per enemy) — keeps how
+  // often "something is diving" reads consistently regardless of how many
+  // enemies are left alive in the wave.
+  cooldownMin: 4,
+  cooldownMax: 7.5,
+  // No diver in the first few seconds of a fresh wave (or right after a
+  // life-loss push-back) — gives the player a moment to read the formation
+  // before anything breaks off it.
+  graceAfterWaveStart: 3,
+  maxConcurrent: 2,
+  duration: 3.2, // seconds for a full dive-out-and-return loop
+  // How strongly the swoop pulls toward the ship's own position at the
+  // midpoint (t = 0.5) — 1 would put it exactly on top of the ship; kept
+  // just under so it reads as "swooping past," not a guaranteed collision.
+  peakPull: 0.82,
+  lateralWiggle: 1.3, // extra side-to-side flourish, purely cosmetic
+  // Fires its one dedicated attack shot at the peak of the swoop (when it's
+  // actually near the ship), not on the normal per-column schedule — see
+  // Scene.tsx, which pulls a diving enemy out of its column's normal
+  // rotation for exactly this reason.
+  firePhase: 0.5,
+  maxTilt: 0.55, // radians of nose-down pitch + bank — purely cosmetic
+  // Extra score for downing an enemy mid-dive: exposed and moving fast, same
+  // "harder target, bigger reward" logic as the combo multiplier.
+  killBonus: 50,
+};
+
 export const HIT_RADIUS = {
   playerProjectileVsEnemy: 0.75,
   enemyProjectileVsShip: 0.85,

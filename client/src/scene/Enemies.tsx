@@ -21,6 +21,11 @@ const SCALE = 1.8; // matches the old per-enemy <group scale={1.8}> wrapper
 
 const _dummy = new THREE.Object3D();
 const _m = new THREE.Matrix4();
+// Scratch objects for the optional dive-tilt rotation in setEnemy — reused
+// across calls the same way _dummy/_m are, rather than allocating a fresh
+// Euler/Matrix4 every frame for every diving enemy.
+const _tiltEuler = new THREE.Euler();
+const _tiltMatrix = new THREE.Matrix4();
 
 function localMatrix(
   position: [number, number, number],
@@ -49,8 +54,16 @@ const LEG_LOCAL = Array.from({ length: LEG_COUNT }, (_, i) => {
 });
 
 export interface EnemiesHandle {
-  /** pos = null hides every part belonging to this enemy (scaled to zero). */
-  setEnemy: (index: number, pos: [number, number, number] | null) => void;
+  /** pos = null hides every part belonging to this enemy (scaled to zero).
+   * `tilt` is an optional whole-enemy Euler rotation (pitch/yaw/roll)
+   * applied on top of each part's own fixed local orientation — used for
+   * the diving/flanking attack run's nose-down bank (see Scene.tsx); a
+   * formation member just sitting in its slot never passes one. */
+  setEnemy: (
+    index: number,
+    pos: [number, number, number] | null,
+    tilt?: [number, number, number],
+  ) => void;
 }
 
 interface EnemiesProps {
@@ -69,8 +82,18 @@ export const Enemies = forwardRef<EnemiesHandle, EnemiesProps>(function Enemies(
   const legsRef = useRef<THREE.InstancedMesh>(null);
 
   useImperativeHandle(ref, () => ({
-    setEnemy(index, pos) {
-      const worldTranslation = pos ? _m.makeTranslation(pos[0], pos[1], pos[2]) : null;
+    setEnemy(index, pos, tilt) {
+      // Translation composed with an optional whole-enemy tilt rotation
+      // (the dive attack's nose-down bank) — a stationary formation member
+      // never passes `tilt`, so this reduces to the plain translation it
+      // always was for every enemy that isn't currently diving.
+      const worldTranslation = pos
+        ? tilt
+          ? _m
+              .makeTranslation(pos[0], pos[1], pos[2])
+              .multiply(_tiltMatrix.makeRotationFromEuler(_tiltEuler.set(tilt[0], tilt[1], tilt[2])))
+          : _m.makeTranslation(pos[0], pos[1], pos[2])
+        : null;
 
       const bodyParts: [React.RefObject<THREE.InstancedMesh | null>, THREE.Matrix4][] = [
         [shellOuterRef, PART_LOCAL.shellOuter],

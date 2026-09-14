@@ -80,7 +80,7 @@ interface GameState {
    * so, Scene must also reset the whole wave, not just the ship, or the
    * still-broken-through formation would re-trigger this next frame. */
   handleInvasion: () => boolean;
-  registerKill: () => void;
+  registerKill: (bonus?: number) => void;
   collectHealth: (amount: number) => void;
   collectWeapon: (kind: WeaponKind, durationMs: number) => void;
   revertWeapon: () => void;
@@ -175,13 +175,15 @@ export const useGameStore = create<GameState>((set, get) => ({
   // Replaces the old flat addScore(100) — every kill now goes through the
   // combo multiplier. Kills within COMBO.windowMs of the last one keep
   // building the streak (capped); a gap that long resets it to 1 first.
-  registerKill: () => {
+  // `bonus` is added flat, on top of the multiplied kill score — Scene
+  // passes DIVE.killBonus for a diving enemy, 0 (default) otherwise.
+  registerKill: (bonus = 0) => {
     const s = get();
     const now = Date.now();
     const inWindow = now < s.comboExpiresAt;
     const multiplier = inWindow ? Math.min(s.comboMultiplier + 1, COMBO.maxMultiplier) : 1;
     set({
-      score: s.score + COMBO.killScore * multiplier,
+      score: s.score + COMBO.killScore * multiplier + bonus,
       comboMultiplier: multiplier,
       comboExpiresAt: now + COMBO.windowMs,
     });
