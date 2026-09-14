@@ -58,6 +58,33 @@
   }
 }
 
+/* The width-based reduction above doesn't reliably fire on a real phone —
+   plenty of real phones report a logical landscape width well past 900px
+   (the exact same false-negative that once hid the touch controls
+   entirely at this same breakpoint), so relying on it alone left the
+   fonts oversized on exactly the devices that needed the reduction most.
+   Driven by the same reliable JS touch-capability flag (App.tsx's
+   IS_TOUCH_DEVICE, passed down as HUD's `compact` prop) instead — doesn't
+   depend on guessing a width threshold at all. Kept alongside the media
+   query above rather than replacing it, since a genuinely narrow desktop
+   window (not touch-capable) still benefits from it. */
+.hud--compact .hud-bar {
+  gap: 14px;
+  row-gap: 8px;
+}
+
+.hud--compact .hud-stat--num {
+  min-width: 56px;
+}
+
+.hud--compact .hud-value {
+  font-size: 15px;
+}
+
+.hud--compact .hud-value--wave {
+  font-size: 18px;
+}
+
 .hud-label {
   font-size: 11px;
   letter-spacing: 0.06em;
