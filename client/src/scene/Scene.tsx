@@ -6,6 +6,7 @@ import {
   BOSS,
   COLORS,
   DIVE,
+  ENEMY_VARIANTS,
   FORMATION,
   HIT_RADIUS,
   PICKUP,
@@ -308,6 +309,11 @@ export function Scene() {
   const shieldBunkerAlive = useRef<number[]>(Array.from({ length: SHIELD.count }, () => blocksPerShield));
 
   const enemyAlive = useRef<boolean[]>(Array.from({ length: ENEMY_COUNT }, () => true));
+  // Hits remaining before death — 1 for an ordinary grunt, ENEMY_VARIANTS.
+  // heavy.hp for a Heavy (see enemyIsHeavy). Only meaningful while
+  // enemyAlive is true for that slot; spawnWave resets both together.
+  const enemyHealth = useRef<number[]>(Array.from({ length: ENEMY_COUNT }, () => 1));
+  const enemyIsHeavy = useRef<boolean[]>(Array.from({ length: ENEMY_COUNT }, () => false));
   // At most one shooter per column at a time (a random alive enemy in that
   // column, picked fresh each time) — one timer per column, not per enemy,
   // so at most FORMATION.cols shots are ever in the air from the wave at
@@ -391,10 +397,39 @@ export function Scene() {
     // conditions needed in any of those loops.
     const isBossWave = wave % BOSS.waveInterval === 0;
     const mask = isBossWave ? Array<boolean>(ENEMY_COUNT).fill(false) : buildWaveMask(wave);
+
+    // Heavy variant selection (see ENEMY_VARIANTS.heavy): a random subset of
+    // this wave's alive slots, sized by a fraction that grows with wave
+    // number. None during a boss wave — mask is all-false, so aliveIndices
+    // ends up empty and heavyTarget is 0.
+    const heavyFraction = Math.min(
+      ENEMY_VARIANTS.heavy.maxFraction,
+      Math.max(0, (wave - 1) * ENEMY_VARIANTS.heavy.fractionGrowthPerWave),
+    );
+    const aliveIndices: number[] = [];
+    for (let i = 0; i < ENEMY_COUNT; i++) if (mask[i]) aliveIndices.push(i);
+    const heavyTarget = Math.round(aliveIndices.length * heavyFraction);
+    // Fisher-Yates on a copy, then take the front heavyTarget — unbiased,
+    // and simple enough for a ~40-item array with no need for anything
+    // fancier.
+    for (let i = aliveIndices.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [aliveIndices[i], aliveIndices[j]] = [aliveIndices[j], aliveIndices[i]];
+    }
+    const heavySet = new Set(aliveIndices.slice(0, heavyTarget));
+
     let waveCount = 0;
     for (let i = 0; i < ENEMY_COUNT; i++) {
       enemyAlive.current[i] = mask[i];
-      enemiesRef.current?.setEnemy(i, mask[i] ? layout[i] : null);
+      const isHeavy = mask[i] && heavySet.has(i);
+      enemyIsHeavy.current[i] = isHeavy;
+      enemyHealth.current[i] = mask[i] ? (isHeavy ? ENEMY_VARIANTS.heavy.hp : 1) : 0;
+      enemiesRef.current?.setEnemy(
+        i,
+        mask[i] ? layout[i] : null,
+        undefined,
+        isHeavy ? ENEMY_VARIANTS.heavy.scale : 1,
+      );
       if (mask[i]) waveCount++;
     }
     aliveCount.current = waveCount;
@@ -604,6 +639,66 @@ export function Scene() {
     if (weaponVisual) weaponVisual.visible = slot.kind === "weapon";
   }
 
+  /**
+   * Applies one player-bolt hit to alive enemy `e` — factored out of the
+   * live per-frame hit-test loop so a dev-only debug hook
+   * (window.__nexusDebug.applyPlayerHitDebug) can call the exact same
+   * logic directly. That hook exists because manually placing a bolt and
+   * waiting a frame for the live 3D collision to land is unreliable in
+   * this project's own headless-testing environment — the bolt's own
+   * per-frame movement (up to ~0.7 units at PROJECTILE.playerSpeed) can
+   * carry it back out of HIT_RADIUS.playerProjectileVsEnemy within the
+   * same frame it was placed, on top of clamped-but-still-coarse frame
+   * deltas under software rendering. See tryHitShieldDebug for the same
+   * pattern already used for shields.
+   *
+   * A non-lethal hit on a Heavy (see ENEMY_VARIANTS.heavy) just chips it —
+   * no kill, no score, no pickup roll, no alive-count change, and its
+   * transform is untouched since only its health changed. Anything else
+   * dies outright, exactly as every enemy always has.
+   */
+  function applyEnemyHit(formation: THREE.Group, e: number) {
+    const dive = diveWorldPos.current[e];
+    const local = layout[e];
+    const ex = dive ? dive.x : formation.position.x + local[0];
+    const ey = dive ? dive.y : formation.position.y + local[1];
+    const ez = dive ? dive.z : formation.position.z + local[2];
+
+    const wasHeavy = enemyIsHeavy.current[e];
+    enemyHealth.current[e] -= 1;
+    if (enemyHealth.current[e] > 0) {
+      explosions.trigger(new THREE.Vector3(ex, ey, ez), COLORS.amberDim);
+      sound.enemyHit();
+      return;
+    }
+
+    enemyAlive.current[e] = false;
+    enemiesRef.current?.setEnemy(e, null);
+    // Downing an enemy mid-dive gets a distinct cyan flash (instead of the
+    // usual amber) and a score bonus — see DIVE.killBonus's own comment
+    // for why: exposed and moving fast is a harder, more deserving target.
+    // A Heavy's own killBonus stacks with that if it happened to be diving
+    // too.
+    const wasDiving = dive !== null;
+    explosions.trigger(new THREE.Vector3(ex, ey, ez), wasDiving ? COLORS.accent : COLORS.amber);
+    sound.enemyHit();
+    if (wasDiving) {
+      diveState.current[e] = null;
+      diveWorldPos.current[e] = null;
+    }
+
+    const bonus = (wasDiving ? DIVE.killBonus : 0) + (wasHeavy ? ENEMY_VARIANTS.heavy.killBonus : 0);
+    useGameStore.getState().registerKill(bonus);
+    spawnPickup(new THREE.Vector3(ex, ey, ez));
+    aliveCount.current -= 1;
+    useGameStore.getState().setEnemiesRemaining(aliveCount.current);
+    if (aliveCount.current <= 0) {
+      useGameStore.getState().advanceWave();
+      spawnWave(formation, useGameStore.getState().wave);
+      sound.waveClear();
+    }
+  }
+
   useFrame((_state, rawDelta) => {
     const delta = Math.min(rawDelta, 1 / 30); // clamp to avoid huge steps on tab-switch
     const { status, paused } = useGameStore.getState();
@@ -650,6 +745,8 @@ export function Scene() {
           spawnWaveDebug: (wave: number) => spawnWave(formation, wave),
           layout,
           enemyAliveArr: enemyAlive.current,
+          enemyHealthArr: enemyHealth.current,
+          enemyIsHeavyArr: enemyIsHeavy.current,
           diveStateArr: diveState.current,
           diveWorldPosArr: diveWorldPos.current,
           nextDiveAtRef: nextDiveAt,
@@ -667,6 +764,7 @@ export function Scene() {
           shieldMeshRef: shieldMeshRef.current,
           blocksPerShield,
           tryHitShieldDebug: tryHitShield,
+          applyPlayerHitDebug: (e: number) => applyEnemyHit(formation, e),
         };
       }
 
@@ -792,7 +890,7 @@ export function Scene() {
           // rides on the formation group's transform again from here on.
           diveState.current[e] = null;
           diveWorldPos.current[e] = null;
-          enemiesRef.current?.setEnemy(e, layout[e]);
+          enemiesRef.current?.setEnemy(e, layout[e], undefined, enemyIsHeavy.current[e] ? ENEMY_VARIANTS.heavy.scale : 1);
           continue;
         }
 
@@ -828,6 +926,7 @@ export function Scene() {
           e,
           [pos.x - formation.position.x, pos.y - formation.position.y, pos.z - formation.position.z],
           [swoop * DIVE.maxTilt, 0, dive.lateralSign * swoop * DIVE.maxTilt * 0.6],
+          enemyIsHeavy.current[e] ? ENEMY_VARIANTS.heavy.scale : 1,
         );
 
         // One dedicated attack shot per dive, fired from wherever it
@@ -973,7 +1072,9 @@ export function Scene() {
             if (!diveState.current[e]) continue;
             diveState.current[e] = null;
             diveWorldPos.current[e] = null;
-            if (enemyAlive.current[e]) enemiesRef.current?.setEnemy(e, layout[e]);
+            if (enemyAlive.current[e]) {
+              enemiesRef.current?.setEnemy(e, layout[e], undefined, enemyIsHeavy.current[e] ? ENEMY_VARIANTS.heavy.scale : 1);
+            }
           }
           nextDiveAt.current = DIVE.graceAfterWaveStart + Math.random() * (DIVE.cooldownMax - DIVE.cooldownMin);
 
@@ -1128,31 +1229,9 @@ export function Scene() {
           const dy = mesh.position.y - ey;
           const dz = mesh.position.z - ez;
           if (dx * dx + dy * dy + dz * dz <= HIT_RADIUS.playerProjectileVsEnemy ** 2) {
-            enemyAlive.current[e] = false;
-            enemiesRef.current?.setEnemy(e, null);
             playerBolts.current.active[i] = false;
             mesh.visible = false;
-            // Downing an enemy mid-dive gets a distinct cyan flash (instead
-            // of the usual amber) and a score bonus — see DIVE.killBonus's
-            // own comment for why: exposed and moving fast is a harder,
-            // more deserving target.
-            const wasDiving = dive !== null;
-            explosions.trigger(new THREE.Vector3(ex, ey, ez), wasDiving ? COLORS.accent : COLORS.amber);
-            sound.enemyHit();
-            if (wasDiving) {
-              diveState.current[e] = null;
-              diveWorldPos.current[e] = null;
-            }
-
-            useGameStore.getState().registerKill(wasDiving ? DIVE.killBonus : 0);
-            spawnPickup(new THREE.Vector3(ex, ey, ez));
-            aliveCount.current -= 1;
-            useGameStore.getState().setEnemiesRemaining(aliveCount.current);
-            if (aliveCount.current <= 0) {
-              useGameStore.getState().advanceWave();
-              spawnWave(formation, useGameStore.getState().wave);
-              sound.waveClear();
-            }
+            applyEnemyHit(formation, e);
             break;
           }
         }

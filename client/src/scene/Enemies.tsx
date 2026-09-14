@@ -21,11 +21,12 @@ const SCALE = 1.8; // matches the old per-enemy <group scale={1.8}> wrapper
 
 const _dummy = new THREE.Object3D();
 const _m = new THREE.Matrix4();
-// Scratch objects for the optional dive-tilt rotation in setEnemy — reused
-// across calls the same way _dummy/_m are, rather than allocating a fresh
-// Euler/Matrix4 every frame for every diving enemy.
+// Scratch objects for the optional dive-tilt rotation and heavy-variant
+// scale in setEnemy — reused across calls the same way _dummy/_m are,
+// rather than allocating fresh ones every frame for every diving enemy.
 const _tiltEuler = new THREE.Euler();
 const _tiltMatrix = new THREE.Matrix4();
+const _scaleMatrix = new THREE.Matrix4();
 
 function localMatrix(
   position: [number, number, number],
@@ -58,11 +59,18 @@ export interface EnemiesHandle {
    * `tilt` is an optional whole-enemy Euler rotation (pitch/yaw/roll)
    * applied on top of each part's own fixed local orientation — used for
    * the diving/flanking attack run's nose-down bank (see Scene.tsx); a
-   * formation member just sitting in its slot never passes one. */
+   * formation member just sitting in its slot never passes one. `scale` is
+   * an optional uniform multiplier on top of the shared SCALE constant —
+   * used for the Heavy variant (see ENEMY_VARIANTS in config/constants.ts),
+   * a visibly bigger silhouette rather than a color difference (which would
+   * need per-instance instanceColor — see Shields.tsx's own comment on why
+   * that path was abandoned as unreliable). Omitted (or 1) for every
+   * ordinary enemy. */
   setEnemy: (
     index: number,
     pos: [number, number, number] | null,
     tilt?: [number, number, number],
+    scale?: number,
   ) => void;
 }
 
@@ -82,18 +90,19 @@ export const Enemies = forwardRef<EnemiesHandle, EnemiesProps>(function Enemies(
   const legsRef = useRef<THREE.InstancedMesh>(null);
 
   useImperativeHandle(ref, () => ({
-    setEnemy(index, pos, tilt) {
+    setEnemy(index, pos, tilt, scale) {
       // Translation composed with an optional whole-enemy tilt rotation
-      // (the dive attack's nose-down bank) — a stationary formation member
-      // never passes `tilt`, so this reduces to the plain translation it
-      // always was for every enemy that isn't currently diving.
-      const worldTranslation = pos
-        ? tilt
-          ? _m
-              .makeTranslation(pos[0], pos[1], pos[2])
-              .multiply(_tiltMatrix.makeRotationFromEuler(_tiltEuler.set(tilt[0], tilt[1], tilt[2])))
-          : _m.makeTranslation(pos[0], pos[1], pos[2])
-        : null;
+      // (the dive attack's nose-down bank) and an optional uniform scale
+      // (the Heavy variant) — a stationary, ordinary formation member
+      // passes neither, so this reduces to the plain translation it always
+      // was.
+      let worldTranslation: THREE.Matrix4 | null = null;
+      if (pos) {
+        _m.makeTranslation(pos[0], pos[1], pos[2]);
+        if (tilt) _m.multiply(_tiltMatrix.makeRotationFromEuler(_tiltEuler.set(tilt[0], tilt[1], tilt[2])));
+        if (scale && scale !== 1) _m.multiply(_scaleMatrix.makeScale(scale, scale, scale));
+        worldTranslation = _m;
+      }
 
       const bodyParts: [React.RefObject<THREE.InstancedMesh | null>, THREE.Matrix4][] = [
         [shellOuterRef, PART_LOCAL.shellOuter],

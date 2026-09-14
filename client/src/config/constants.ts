@@ -172,6 +172,32 @@ export const COMBO = {
   killScore: 100,
 };
 
+// A second enemy type for content variety within the ordinary grid, not
+// just a formation-wide difficulty knob: a Heavy takes 2 hits instead of
+// the regular grunt's 1, rendered visibly bigger (a real silhouette
+// difference, not a color one — see Enemies.tsx's own comment on why a
+// per-instance color was avoided) rather than a distinct model, so it
+// still reads as "one of them" scaled up, the same relationship Boss.tsx
+// has to a regular enemy. Scene.tsx computes the actual per-wave fraction
+// (see waveDifficulty's own sibling for this, alongside it) — pure tuning
+// data lives here, the formula lives with the rest of the wave-shaping
+// logic.
+export const ENEMY_VARIANTS = {
+  heavy: {
+    hp: 2,
+    scale: 1.35,
+    // Extra flat score on top of the normal combo-scored kill — same
+    // "harder target, bigger reward" logic as DIVE.killBonus.
+    killBonus: 60,
+    // Wave 1 stays entirely Heavy-free (FORMATION's own comment: "wave 1 is
+    // exactly the FORMATION baseline") — this fraction grows by this much
+    // per wave after that, capped so even a very late wave never becomes
+    // ALL Heavies.
+    fractionGrowthPerWave: 0.06,
+    maxFraction: 0.3,
+  },
+};
+
 export const FORMATION = {
   // The original arcade wave is 11x5 (55 invaders); we don't quite match
   // that (bigger, more detailed models need more breathing room per unit
