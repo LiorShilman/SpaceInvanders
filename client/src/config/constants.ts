@@ -88,6 +88,13 @@ export const COLORS = {
   // gold reads as "rare/premium" and stands well apart from cyan
   // (informational), violet (buff) and the enemies' own magenta-red.
   pickupBomb: "#ffd76a",
+  // The player's own grenade throw (see GRENADE below) — a warm safety
+  // orange, distinct from the nova bomb's gold, the enemies' magenta-red,
+  // and the enemy bolt's own hot orange (close in hue, but nothing else in
+  // the game moves AWAY from the ship the way this does, and its round
+  // dark-metal shell — see Grenade.tsx — reads as a different kind of
+  // object well before the color alone has to carry that distinction).
+  grenade: "#ffa726",
 } as const;
 
 // Arena bounds the player ship can move within (world units). Must cover the
@@ -200,6 +207,33 @@ export const WEAPON = {
   rapid: {
     cooldown: 0.09,
   },
+};
+
+// The player's own grenade throw — a secondary, always-available tactical
+// tool on its own cooldown (not a limited pickup-granted resource like the
+// nova bomb, and not a permanent weapon swap like WEAPON above): a single
+// flat point of damage to every alive enemy within blastRadius, same as
+// one bolt already does to whichever one it hits, so its value is
+// "several hits from one well-aimed throw," not "instantly stronger than
+// normal fire." Deliberately weaker per-target than the nova bomb (which
+// force-kills regardless of remaining Heavy health) since it's frequent
+// and player-controlled rather than a rare jackpot pickup.
+export const GRENADE = {
+  cooldown: 9, // seconds between throws
+  speed: 14, // slower than a normal bolt (PROJECTILE.playerSpeed=22) — reads as "heavier," not just another shot
+  blastRadius: 3.5,
+  // Detonates on its own once it's traveled this far past the ship's
+  // launch position, even without hitting anything — a lobbed grenade
+  // that sails clean through an empty formation shouldn't just fly
+  // forever.
+  maxRange: 30,
+  // A modest bonus over a single pinpoint bolt's own 1 damage — rewards
+  // the AOE nature without needing precise aim, but far short of the nova
+  // bomb's own dedicated (and much rarer) boss damage.
+  bossDamage: 2,
+  // A handful in flight at once is generous given the long cooldown —
+  // never more than one or two are ever actually active.
+  poolSize: 4,
 };
 
 // Score combo: killing enemies without a gap longer than windowMs keeps

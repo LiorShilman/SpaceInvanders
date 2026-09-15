@@ -9,6 +9,7 @@ import {
   ENEMY_VARIANTS,
   FLANKER,
   FORMATION,
+  GRENADE,
   HIT_RADIUS,
   PICKUP,
   PROJECTILE,
@@ -26,6 +27,7 @@ import { Enemies, type EnemiesHandle } from "./Enemies";
 import { Boss, type BossVariant } from "./Boss";
 import { Projectile } from "./Projectile";
 import { EnemyBolt } from "./EnemyBolt";
+import { Grenade } from "./Grenade";
 import { Pickup } from "./Pickup";
 import { Shields, type ShieldTierMeshes } from "./Shields";
 import { Starfield } from "./Starfield";
@@ -474,6 +476,18 @@ export function Scene() {
   const playerBolts = useRef<Pool>(makePool(PROJECTILE.poolSize, -1, PROJECTILE.playerSpeed));
   const enemyBolts = useRef<Pool>(makePool(PROJECTILE.poolSize, 1, PROJECTILE.enemySpeed));
   const pickups = useRef<PickupSlot[]>(makePickupPool(PICKUP_POOL_SIZE));
+
+  // The player's own grenade throw (see GRENADE in config/constants.ts) —
+  // reuses the same Pool/spawn machinery as the bolt pools above (it's
+  // still just "a thing that flies in a straight line and gets culled
+  // eventually"), but grenadeLaunchZ tracks each active slot's own launch
+  // depth separately, since a grenade needs to know how far IT SPECIFICALLY
+  // has traveled to detonate on its own fuse (GRENADE.maxRange) — the
+  // ordinary bolt pools only ever cull relative to a fixed world position,
+  // never "distance since this one was fired."
+  const grenadePool = useRef<Pool>(makePool(GRENADE.poolSize, -1, GRENADE.speed));
+  const grenadeLaunchZ = useRef<number[]>(Array.from({ length: GRENADE.poolSize }, () => 0));
+  const grenadeCooldown = useRef(0);
 
   // The currently-held weapon and when it expires — mirrored into the store
   // (see collectWeapon/revertWeapon) purely so the HUD can display it;
@@ -937,6 +951,54 @@ export function Scene() {
     useGameStore.getState().unlockAchievement("first_nova");
   }
 
+  /**
+   * A grenade detonating at `center` — one flat point of damage (via the
+   * ordinary applyEnemyHit, so Heavy chipping/dive-flank bonuses/scoring/
+   * pickup rolls/the wave-clear check all still apply exactly as they do
+   * for a normal bolt) to every alive enemy within GRENADE.blastRadius,
+   * plus a flat chunk of boss damage if one's active and in range. Value
+   * is "several hits from one well-aimed throw," not "stronger than a
+   * bolt" — deliberately weaker per-target than the nova bomb, which
+   * force-kills regardless of remaining Heavy health.
+   */
+  function detonateGrenade(formation: THREE.Group, center: THREE.Vector3) {
+    explosions.trigger(center, COLORS.grenade);
+    explosions.trigger(center, COLORS.amber);
+    sound.grenadeExplode();
+    addShake(0.35);
+
+    for (let e = 0; e < ENEMY_COUNT; e++) {
+      if (!enemyAlive.current[e]) continue;
+      const detached = diveWorldPos.current[e] ?? flankWorldPos.current[e];
+      const local = layout[e];
+      const ex = detached ? detached.x : formation.position.x + local[0];
+      const ey = detached ? detached.y : formation.position.y + local[1];
+      const ez = detached ? detached.z : formation.position.z + local[2];
+      const dx = center.x - ex;
+      const dy = center.y - ey;
+      const dz = center.z - ez;
+      if (dx * dx + dy * dy + dz * dz > GRENADE.blastRadius ** 2) continue;
+      const beforeCount = aliveCount.current;
+      applyEnemyHit(formation, e);
+      // Same cascade guard as triggerNovaBomb — a wave-clear mid-loop
+      // invalidates the rest of this pass' enemy indices (see its own
+      // comment for the full reasoning).
+      if (aliveCount.current > beforeCount) break;
+    }
+
+    if (bossActive.current && bossRef.current) {
+      const dx = center.x - bossRef.current.position.x;
+      const dy = center.y - bossRef.current.position.y;
+      const dz = center.z - bossRef.current.position.z;
+      if (dx * dx + dy * dy + dz * dz <= GRENADE.blastRadius ** 2) {
+        bossHealth.current = Math.max(0, bossHealth.current - GRENADE.bossDamage);
+        useGameStore.getState().damageBoss(GRENADE.bossDamage);
+        bossHitFlashUntil.current = simTime.current + 0.15;
+        if (bossHealth.current <= 0) defeatBossNow(formation);
+      }
+    }
+  }
+
   useFrame((_state, rawDelta) => {
     const clampedDelta = Math.min(rawDelta, 1 / 30); // clamp to avoid huge steps on tab-switch
     // Hitstop: see hitstopUntil's own comment — crawl to ~4% speed for a
@@ -1019,6 +1081,10 @@ export function Scene() {
           tryHitShieldDebug: tryHitShield,
           applyPlayerHitDebug: (e: number) => applyEnemyHit(formation, e),
           triggerNovaBombDebug: () => triggerNovaBomb(formation),
+          grenadePoolRef: grenadePool.current,
+          grenadeLaunchZArr: grenadeLaunchZ.current,
+          grenadeCooldownRef: grenadeCooldown,
+          detonateGrenadeDebug: (center: THREE.Vector3) => detonateGrenade(formation, center),
         };
       }
 
@@ -1103,6 +1169,25 @@ export function Scene() {
           );
         }
         sound.playerFire(); // once per trigger pull, not once per bolt (spread fires 3 at once)
+      }
+
+      // --- grenade throw -----------------------------------------------------
+      // A boolean held-state on a long cooldown, exactly like primary fire's
+      // own (much shorter) one — held or tapped, the cooldown alone paces
+      // how often it can actually go off either way.
+      grenadeCooldown.current -= delta;
+      if (input.current.grenade && grenadeCooldown.current <= 0) {
+        grenadeCooldown.current = GRENADE.cooldown;
+        const slot = grenadePool.current.active.indexOf(false);
+        if (slot !== -1) {
+          grenadeLaunchZ.current[slot] = ship.position.z;
+          spawn(grenadePool.current, new THREE.Vector3(ship.position.x, ship.position.y, ship.position.z - 1));
+          sound.grenadeThrow();
+          // Mirrors the cooldown to the store purely for the HUD readout
+          // (see grenadeReadyAt's own comment) — Scene's own ref above
+          // stays the authoritative timer the simulation itself checks.
+          useGameStore.getState().throwGrenade();
+        }
       }
 
       // --- formation sway + advance ----------------------------------------
@@ -1801,6 +1886,60 @@ export function Scene() {
         }
       }
 
+      // --- grenade: move, tumble, detonate on impact or its own fuse ---------
+      // Reuses the same pool-movement idiom as the bolt pools above (this
+      // is still just "a thing that flies in a straight line"), but a
+      // grenade's own OUTCOME on contact is a blast radius (detonateGrenade)
+      // rather than an instant single-target kill, and it also goes off on
+      // its own past GRENADE.maxRange even if it never hits anything —
+      // exactly like a thrown grenade's own fuse, not a shot that just
+      // keeps flying forever.
+      for (let i = 0; i < grenadePool.current.refs.length; i++) {
+        if (!grenadePool.current.active[i]) continue;
+        const mesh = grenadePool.current.refs[i].current;
+        if (!mesh) continue;
+        mesh.position.z += grenadePool.current.dir * grenadePool.current.speed * delta;
+        mesh.rotation.x += delta * 6; // tumbling roll, purely cosmetic
+        mesh.rotation.z += delta * 4;
+
+        let detonate = grenadeLaunchZ.current[i] - mesh.position.z >= GRENADE.maxRange;
+
+        if (!detonate && tryHitShield(mesh.position.x, mesh.position.y, mesh.position.z)) {
+          detonate = true;
+        }
+
+        if (!detonate) {
+          for (let e = 0; e < ENEMY_COUNT; e++) {
+            if (!enemyAlive.current[e]) continue;
+            const detached = diveWorldPos.current[e] ?? flankWorldPos.current[e];
+            const local = layout[e];
+            const ex = detached ? detached.x : formation.position.x + local[0];
+            const ey = detached ? detached.y : formation.position.y + local[1];
+            const ez = detached ? detached.z : formation.position.z + local[2];
+            const dx = mesh.position.x - ex;
+            const dy = mesh.position.y - ey;
+            const dz = mesh.position.z - ez;
+            if (dx * dx + dy * dy + dz * dz <= HIT_RADIUS.playerProjectileVsEnemy ** 2) {
+              detonate = true;
+              break;
+            }
+          }
+        }
+
+        if (!detonate && bossActive.current && bossRef.current) {
+          const dx = mesh.position.x - bossRef.current.position.x;
+          const dy = mesh.position.y - bossRef.current.position.y;
+          const dz = mesh.position.z - bossRef.current.position.z;
+          if (dx * dx + dy * dy + dz * dz <= BOSS.hitRadius ** 2) detonate = true;
+        }
+
+        if (detonate) {
+          grenadePool.current.active[i] = false;
+          mesh.visible = false;
+          detonateGrenade(formation, mesh.position.clone());
+        }
+      }
+
       // --- pickups: drift toward the ship, catch on contact, expire otherwise --
       for (const slot of pickups.current) {
         if (!slot.active) continue;
@@ -2012,6 +2151,9 @@ export function Scene() {
       ))}
       {enemyBolts.current.refs.map((ref, i) => (
         <EnemyBolt key={`e${i}`} ref={ref as React.RefObject<THREE.Group>} />
+      ))}
+      {grenadePool.current.refs.map((ref, i) => (
+        <Grenade key={`g${i}`} ref={ref as React.RefObject<THREE.Group>} />
       ))}
       {pickups.current.map((p, i) => (
         <Pickup key={`pk${i}`} ref={p.ref as React.RefObject<THREE.Group>} />

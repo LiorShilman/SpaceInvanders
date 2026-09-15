@@ -95,7 +95,7 @@ export function TouchControls() {
   // Shared press/release handler factory for the plain hold-buttons
   // (forward/backward/fire) — each just maps to one InputState key for as
   // long as that specific pointer stays down on it.
-  function holdButton(key: "forward" | "backward" | "fire") {
+  function holdButton(key: "forward" | "backward" | "fire" | "grenade") {
     return {
       onPointerDown: (e: React.PointerEvent) => {
         unlockAudio();
@@ -132,6 +132,13 @@ export function TouchControls() {
           ▼
         </button>
       </div>
+
+      {/* Held exactly like the fire button above (see the `grenade` field's
+          own comment in useInput.ts) — Scene's long cooldown paces actual
+          throws on its own, so there's no need to edge-detect a tap here. */}
+      <button className="touch-grenade-btn" aria-label="רימון" {...holdButton("grenade")}>
+        💣
+      </button>
 
       <button className="touch-fire-btn" aria-label="ירי" {...holdButton("fire")}>
         ירי

@@ -9,6 +9,12 @@ export interface InputState {
   forward: boolean;
   backward: boolean;
   fire: boolean;
+  // The grenade throw (see GRENADE in config/constants.ts) — a boolean
+  // held-state exactly like `fire`, not edge-detected on keydown alone:
+  // Scene's own long cooldown timer already paces it naturally regardless
+  // of whether the key is tapped or held, the same way primary fire's own
+  // (much shorter) cooldown already does.
+  grenade: boolean;
 }
 
 // A single module-level object, not a per-hook useRef — there's only ever
@@ -27,6 +33,7 @@ const inputState: InputState = {
   forward: false,
   backward: false,
   fire: false,
+  grenade: false,
 };
 
 /** Touch controls (and anything else outside the keyboard/mouse listeners
@@ -52,6 +59,7 @@ const KEY_MAP: Record<string, keyof InputState> = {
   KeyZ: "forward",
   KeyC: "backward",
   Space: "fire",
+  KeyG: "grenade",
 };
 
 /**

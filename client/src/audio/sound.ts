@@ -177,4 +177,18 @@ export const sound = {
     tone(120, 900, 0.4, { type: "sawtooth", volume: 0.22 });
     tone(900, 200, 0.5, { type: "sine", volume: 0.18, delay: 0.15 });
   },
+  // A short, low "thunk" launch — deliberately unlike playerFire's crisp
+  // square bleep, since a lobbed grenade is a heavier, slower-committing
+  // action than a bolt (see GRENADE in config/constants.ts).
+  grenadeThrow() {
+    tone(180, 90, 0.12, { type: "triangle", volume: 0.1 });
+  },
+  // Bigger and lower than enemyHit/playerHit — a wide-radius blast, not a
+  // single-target impact — but shorter and quieter than novaBomb's full
+  // power-surge cue, matching the design intent that a grenade is a
+  // frequent tactical tool, not a rare instant-win jackpot.
+  grenadeExplode() {
+    noiseBurst(0.35, { volume: 0.28, filterFreq: 1000 });
+    tone(150, 40, 0.35, { type: "sawtooth", volume: 0.2 });
+  },
 };

@@ -67,6 +67,7 @@ export function HUD({
     comboExpiresAt,
     weapon,
     weaponExpiresAt,
+    grenadeReadyAt,
     highScore,
     highWave,
     leaderboard,
@@ -118,6 +119,10 @@ export function HUD({
   // itself from comboExpiresAt rather than trusting the stored value.
   const displayMultiplier = now < comboExpiresAt ? comboMultiplier : 1;
   const weaponSecondsLeft = Math.max(0, Math.ceil((weaponExpiresAt - now) / 1000));
+  // Grenade cooldown countdown — same derivation shape as weaponSecondsLeft,
+  // but here 0 means "ready to throw" (G) rather than "no timed weapon".
+  const grenadeSecondsLeft = Math.max(0, Math.ceil((grenadeReadyAt - now) / 1000));
+  const grenadeReady = grenadeSecondsLeft === 0;
 
   // The wave-cleared banner is transient — it clears itself a couple of
   // seconds after appearing, rather than needing a dismiss button.
@@ -199,6 +204,16 @@ export function HUD({
             </span>
           </div>
         )}
+        {/* Grenade readiness — G throws it (see GRENADE in
+            config/constants.ts). Shows "מוכן" the moment it's armed, a
+            plain countdown otherwise, same "ready vs. counting down" shape
+            weaponSecondsLeft already uses for the timed-weapon stat. */}
+        <div className="hud-stat hud-stat--num">
+          <span className="hud-label">רימון (G)</span>
+          <span className="hud-value hud-value--grenade" data-ready={grenadeReady}>
+            {grenadeReady ? "מוכן" : `${grenadeSecondsLeft}ש`}
+          </span>
+        </div>
         {/* One flex group, one shared auto-margin — three separate buttons
             each carrying their own margin-inline-start: auto (the old
             layout) could each end up on a different wrapped line with the

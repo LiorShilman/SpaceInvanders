@@ -1,5 +1,5 @@
 import { create } from "zustand";
-import { BOSS, COMBO, SHIP } from "../config/constants";
+import { BOSS, COMBO, GRENADE, SHIP } from "../config/constants";
 
 // "cleared" was a dead end — no such terminal state anymore. Beating a wave
 // spawns a new, harder one (see Scene's spawnWave); only running out of
@@ -160,6 +160,12 @@ interface GameState {
   // is before this, and Scene lets enemy bolts pass through the ship
   // visually rather than colliding, for the same window.
   invulnerableUntil: number;
+  // Wall-clock timestamp the grenade throw is next ready at — 0 (or any
+  // past timestamp) means ready now. Mirrors weaponExpiresAt's pattern:
+  // Scene's own grenadeCooldown ref is the authoritative timer that
+  // actually gates firing, this is purely a display copy for HUD.tsx's
+  // readiness indicator (same store-vs-ref split as radarBlips/bossHealth).
+  grenadeReadyAt: number;
   // Persisted across runs (localStorage) — NOT part of `initial` below, so
   // reset() (a shallow merge, not a replace) never touches these.
   highScore: number;
@@ -220,6 +226,10 @@ interface GameState {
    * collectWeapon do for their own pickups. */
   collectNova: () => void;
   revertWeapon: () => void;
+  // Scene calls this the instant a grenade actually leaves the ship (slot
+  // found, cooldown was ready) — sets the display-only readiness timestamp
+  // HUD.tsx reads, same as collectWeapon setting weaponExpiresAt.
+  throwGrenade: () => void;
   setEnemiesRemaining: (count: number) => void;
   advanceWave: () => void;
   clearBanner: () => void;
@@ -265,6 +275,7 @@ const initial = {
   weapon: "base" as WeaponKind,
   weaponExpiresAt: 0,
   invulnerableUntil: 0,
+  grenadeReadyAt: 0,
   paused: false,
   bossActive: false,
   bossHealth: 0,
@@ -379,6 +390,8 @@ export const useGameStore = create<GameState>((set, get) => ({
   // Scene calls this once its own timer sees the current weapon's time run
   // out — silent on purpose (no banner), unlike picking one up.
   revertWeapon: () => set({ weapon: "base", weaponExpiresAt: 0 }),
+
+  throwGrenade: () => set({ grenadeReadyAt: Date.now() + GRENADE.cooldown * 1000 }),
 
   setEnemiesRemaining: (count) => set({ enemiesRemaining: count }),
 

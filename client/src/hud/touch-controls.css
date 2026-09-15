@@ -12,7 +12,8 @@
 
 .touch-joystick-base,
 .touch-dive-btn,
-.touch-fire-btn {
+.touch-fire-btn,
+.touch-grenade-btn {
   pointer-events: all;
   /* Without this, the browser intercepts a finger drag as page scroll/pull-
      to-refresh before our own pointermove handler ever sees it. */
@@ -96,6 +97,32 @@
   background: rgba(255, 46, 99, 0.35);
   border-color: #ff2e63;
   box-shadow: 0 0 20px rgba(255, 46, 99, 0.5);
+}
+
+/* A small, separate button rather than a second full-size one next to
+   fire — a grenade is a deliberate, occasional tap (long cooldown), not
+   something a thumb should ever hit by accident while spamming fire. Sits
+   above-left of the fire button, same distance-from-thumb reasoning as the
+   dive buttons sitting above-left of the joystick. */
+.touch-grenade-btn {
+  position: absolute;
+  right: max(46px, calc(env(safe-area-inset-right) + 46px));
+  bottom: max(132px, calc(env(safe-area-inset-bottom) + 132px));
+  width: 56px;
+  height: 56px;
+  border-radius: 50%;
+  font-size: 22px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(255, 167, 38, 0.12);
+  border-color: rgba(255, 167, 38, 0.5);
+}
+
+.touch-grenade-btn:active {
+  background: rgba(255, 167, 38, 0.35);
+  border-color: #ffa726;
+  box-shadow: 0 0 20px rgba(255, 167, 38, 0.5);
 }
 
 /* A width-based "hide these above 900px" rule used to live here as a
