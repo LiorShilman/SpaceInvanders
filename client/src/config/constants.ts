@@ -368,31 +368,24 @@ export const BOSS = {
   waveInterval: 5,
   // Hits to kill on its first appearance (wave 5); grows on every repeat
   // encounter (wave 10, 15, ...) the same escalating-difficulty way
-  // WAVE_SCALING does for the ordinary formation.
+  // WAVE_SCALING does for the ordinary formation. Shared by both variants
+  // below — the fight's difficulty knob is health, not per-variant tuning.
   baseHealth: 24,
   healthGrowthPerEncounter: 10,
-  // Side-to-side sweep across the arena, not a fixed position — a
-  // stationary bullet-hopper would be trivial to sit under all fight.
-  sweepSpeed: 3.2,
-  advanceSpeed: 0.5,
   // Stops noticeably further back than the regular formation's own
   // frontLineZ (-8) — a much bigger, slower target needs more runway for
-  // its barrages to actually be dodgeable rather than instantly on top of
+  // its attacks to actually be dodgeable rather than instantly on top of
   // the ship the moment it arrives.
   frontLineZ: -16,
-  fireIntervalMin: 1.1,
-  fireIntervalMax: 2,
-  spreadCount: 5, // bolts per barrage, fanned across spreadWidth
-  spreadWidth: 3.6,
-  // A visible "winding up" tell in the second before each barrage — a
+  // A visible "winding up" tell in the second before each attack — a
   // slow, ever-growing swell (see Scene.tsx's own use of this) rather than
-  // the barrage just appearing with zero warning, so dodging it is a real
+  // the attack just appearing with zero warning, so dodging it is a real
   // read-and-react skill instead of a memorization/luck check.
   telegraphDuration: 0.45,
   telegraphPulse: 0.1,
   // Generously sized to its own visualScale below — a big target, meant to
-  // be easy to land shots on (the challenge is surviving its barrages and
-  // sweep, not pixel-precise aim).
+  // be easy to land shots on (the challenge is surviving its attacks and
+  // movement, not pixel-precise aim).
   hitRadius: 2.1,
   // "Rammed the ship" proximity — bigger than HIT_RADIUS.enemyVsShip to
   // match its much larger visual footprint, but frontLineZ above already
@@ -400,6 +393,36 @@ export const BOSS = {
   contactRadius: 3,
   killScore: 800,
   visualScale: 4.2,
+  // Two alternating variants (see Boss.tsx for their shared-model,
+  // different-accent visual side of this) — odd encounters (wave 5, 15,
+  // 25, ...) get the Sentinel, even ones (wave 10, 20, 30, ...) get the
+  // Harrier. Genuinely different fights, not a reskinned health bar: the
+  // Sentinel is a slower area-denial turret firing a wide barrage from
+  // range; the Harrier moves faster and more erratically and fires a
+  // single precision-aimed shot (spawned at the ship's own current
+  // position rather than the boss's — see Scene.tsx) instead of a spread,
+  // trading "dodge a wide pattern" for "dodge one accurate shot while
+  // being harder to predict yourself."
+  variants: {
+    sentinel: {
+      sweepSpeed: 3.2,
+      advanceSpeed: 0.5,
+      fireIntervalMin: 1.1,
+      fireIntervalMax: 2,
+      spreadCount: 5, // bolts per barrage, fanned across spreadWidth
+      spreadWidth: 3.6,
+      aimed: false,
+    },
+    harrier: {
+      sweepSpeed: 5.5,
+      advanceSpeed: 0.7,
+      fireIntervalMin: 0.7,
+      fireIntervalMax: 1.3,
+      spreadCount: 1,
+      spreadWidth: 0,
+      aimed: true,
+    },
+  },
 };
 
 export const HIT_RADIUS = {

@@ -1,4 +1,4 @@
-import { createRef, useMemo, useRef } from "react";
+import { createRef, useMemo, useRef, useState } from "react";
 import { useFrame, useThree } from "@react-three/fiber";
 import * as THREE from "three";
 import {
@@ -21,7 +21,7 @@ import { sound } from "../audio/sound";
 import { useInput } from "../hooks/useInput";
 import { Ship } from "./Ship";
 import { Enemies, type EnemiesHandle } from "./Enemies";
-import { Boss } from "./Boss";
+import { Boss, type BossVariant } from "./Boss";
 import { Projectile } from "./Projectile";
 import { EnemyBolt } from "./EnemyBolt";
 import { Pickup } from "./Pickup";
@@ -317,6 +317,12 @@ export function Scene() {
   // enemyAlive is true for that slot; spawnWave resets both together.
   const enemyHealth = useRef<number[]>(Array.from({ length: ENEMY_COUNT }, () => 1));
   const enemyIsHeavy = useRef<boolean[]>(Array.from({ length: ENEMY_COUNT }, () => false));
+  // A Heavy that's taken a non-lethal hit (down to its last hit point) —
+  // blinked every frame in the per-enemy visibility loop below so a chip
+  // reads as a persistent, ongoing "this one is wounded" state instead of
+  // just a one-off spark that's easy to miss mid-fight. Meaningless for a
+  // regular one-hit grunt (nothing ever survives a hit to reach this).
+  const enemyChipped = useRef<boolean[]>(Array.from({ length: ENEMY_COUNT }, () => false));
   // At most one shooter per column at a time (a random alive enemy in that
   // column, picked fresh each time) — one timer per column, not per enemy,
   // so at most FORMATION.cols shots are ever in the air from the wave at
@@ -350,6 +356,14 @@ export function Scene() {
   const bossHealth = useRef(0);
   const bossNextFireAt = useRef(0);
   const bossSweepDir = useRef<1 | -1>(1);
+  // Which of BOSS.variants is fighting (see its own comment in
+  // constants.ts) — a ref for the simulation's own per-frame movement/fire
+  // logic (needs to be authoritative the instant a new boss spawns, with
+  // zero React-render lag), mirrored into bossVariantVisual purely to
+  // drive the <Boss variant={...}> prop, the same ref-vs-state split
+  // bossHealth/bossActive already have with the store.
+  const bossVariant = useRef<BossVariant>("sentinel");
+  const [bossVariantVisual, setBossVariantVisual] = useState<BossVariant>("sentinel");
   // A short, sharp "recoil" scale-pop on every landed hit — distinct pacing
   // from the slow telegraph swell above (this decays over ~0.15s instead of
   // building over ~0.45s), giving a hit on the boss the same kind of
@@ -391,6 +405,20 @@ export function Scene() {
     setShipAccentColor(ship, "#ffffff");
   }
 
+  /** Whichever accent color should be showing right now absent any
+   * transient effect (hit-flash, critical pulse) — base phosphor, or the
+   * current weapon buff's tint. Shared by every place that needs to revert
+   * back to "normal" rather than duplicating the same ternary. */
+  function baseAccentColor(): string {
+    return weaponRef.current.kind === "base" ? COLORS.phosphor : COLORS.pickupWeapon;
+  }
+
+  // Tracks whether the critical-health pulse (below) was active last frame,
+  // purely so health recovering back out of critical (a health pickup, a
+  // fresh respawn) reverts the accent exactly once instead of leaving it
+  // stuck on whatever shade the pulse last landed on.
+  const wasCritical = useRef(false);
+
   // Hitstop ("bullet time"): the whole simulation crawls to near-standstill
   // for a brief wall-clock window — reserved for the single biggest,
   // rarest moment in a run (defeating a boss) rather than every hit, so it
@@ -429,6 +457,8 @@ export function Scene() {
     ship.rotation.set(0, 0, 0);
     weaponRef.current = { kind: "base", expiresAt: 0 };
     setShipAccentColor(ship, COLORS.phosphor);
+    hitFlashUntil.current = 0;
+    wasCritical.current = false;
     useGameStore.getState().reset();
     spawnWave(formation, 1);
   }
@@ -480,6 +510,7 @@ export function Scene() {
       const isHeavy = mask[i] && heavySet.has(i);
       enemyIsHeavy.current[i] = isHeavy;
       enemyHealth.current[i] = mask[i] ? (isHeavy ? ENEMY_VARIANTS.heavy.hp : 1) : 0;
+      enemyChipped.current[i] = false;
       enemiesRef.current?.setEnemy(
         i,
         mask[i] ? layout[i] : null,
@@ -565,6 +596,12 @@ export function Scene() {
       // second (wave 10), etc.
       const encounterNumber = wave / BOSS.waveInterval;
       const maxHealth = BOSS.baseHealth + (encounterNumber - 1) * BOSS.healthGrowthPerEncounter;
+      // Alternates every encounter — see BOSS.variants' own comment for
+      // why these are genuinely different fights, not a reskin.
+      const variantName: BossVariant = encounterNumber % 2 === 0 ? "harrier" : "sentinel";
+      const variant = BOSS.variants[variantName];
+      bossVariant.current = variantName;
+      setBossVariantVisual(variantName);
       bossActive.current = true;
       bossHealth.current = maxHealth;
       bossHitFlashUntil.current = 0;
@@ -572,7 +609,7 @@ export function Scene() {
       // Scheduled the same way columnNextFire is just above: a raw value,
       // implicitly relative to the simTime.current = 0 this function just
       // set.
-      bossNextFireAt.current = BOSS.fireIntervalMin + Math.random() * (BOSS.fireIntervalMax - BOSS.fireIntervalMin);
+      bossNextFireAt.current = variant.fireIntervalMin + Math.random() * (variant.fireIntervalMax - variant.fireIntervalMin);
       if (bossRef.current) {
         bossRef.current.visible = true;
         bossRef.current.scale.setScalar(BOSS.visualScale);
@@ -736,11 +773,16 @@ export function Scene() {
     const wasHeavy = enemyIsHeavy.current[e];
     enemyHealth.current[e] -= options?.forceLethal ? enemyHealth.current[e] : 1;
     if (enemyHealth.current[e] > 0) {
+      // Chipped, not downed — flagged for the per-frame blink loop below
+      // (see enemyChipped's own comment) so the damage reads as an ongoing
+      // state a player can notice mid-fight, not just this one spark.
+      enemyChipped.current[e] = true;
       explosions.trigger(new THREE.Vector3(ex, ey, ez), COLORS.amberDim);
       sound.enemyHit();
       return;
     }
 
+    enemyChipped.current[e] = false;
     enemyAlive.current[e] = false;
     enemiesRef.current?.setEnemy(e, null);
     // Downing an enemy mid-dive gets a distinct cyan flash (instead of the
@@ -875,6 +917,7 @@ export function Scene() {
           enemyAliveArr: enemyAlive.current,
           enemyHealthArr: enemyHealth.current,
           enemyIsHeavyArr: enemyIsHeavy.current,
+          enemyChippedArr: enemyChipped.current,
           diveStateArr: diveState.current,
           diveWorldPosArr: diveWorldPos.current,
           nextDiveAtRef: nextDiveAt,
@@ -939,7 +982,29 @@ export function Scene() {
       // showing the correct post-expiry color, not a stale one.
       if (hitFlashUntil.current > 0 && now >= hitFlashUntil.current) {
         hitFlashUntil.current = 0;
-        setShipAccentColor(ship, weaponRef.current.kind === "base" ? COLORS.phosphor : COLORS.pickupWeapon);
+        setShipAccentColor(ship, baseAccentColor());
+      }
+
+      // --- critical-health warning pulse: a continuous, on-the-ship signal
+      // once health drops to the same critical threshold the HUD's own
+      // health bar already uses (hud.css's [data-critical], healthPct<=25)
+      // — a glance at the ship itself should read "in real danger," not
+      // just a number in the corner. Skipped for the split second the
+      // brief hit-flash is already showing (see addHitFlash) so the two
+      // never fight over the exact same parts; wasCritical makes sure
+      // recovering back out of critical (a health pickup, a fresh
+      // respawn) reverts the accent exactly once instead of leaving it
+      // stuck on the last pulsed shade.
+      const health = useGameStore.getState().health;
+      const isCritical = health > 0 && health / SHIP.maxHealth <= 0.25;
+      if (isCritical && hitFlashUntil.current === 0) {
+        const pulseT = (Math.sin(now * 0.012) + 1) / 2; // 0..1
+        const warnColor = new THREE.Color(baseAccentColor()).lerp(new THREE.Color("#ff3b3b"), 0.15 + pulseT * 0.7);
+        setShipAccentColor(ship, `#${warnColor.getHexString()}`);
+        wasCritical.current = true;
+      } else if (wasCritical.current && hitFlashUntil.current === 0) {
+        setShipAccentColor(ship, baseAccentColor());
+        wasCritical.current = false;
       }
 
       // --- player firing ---------------------------------------------------
@@ -1086,6 +1151,20 @@ export function Scene() {
         }
       }
 
+      // --- chipped-enemy blink: an ongoing "wounded" tell -------------------
+      // A Heavy that survived a hit (see enemyChipped's own comment) blinks
+      // every frame instead of just having flashed a spark once — a chip is
+      // easy to miss mid-fight otherwise, especially against a scale bump
+      // that's already there for every Heavy regardless of health. Diving
+      // ones are left alone here: the dive-update loop above already gives
+      // them its own per-frame attention, and layering a second competing
+      // visibility toggle on the exact same instance would just fight it.
+      for (let e = 0; e < ENEMY_COUNT; e++) {
+        if (!enemyChipped.current[e] || !enemyAlive.current[e] || diveState.current[e]) continue;
+        const blinkOn = Math.floor(simTime.current * 6) % 2 === 0;
+        enemiesRef.current?.setEnemy(e, blinkOn ? layout[e] : null, undefined, ENEMY_VARIANTS.heavy.scale);
+      }
+
       // --- boss wave: sweep, advance, and barrage fire ------------------------
       // See BOSS's own comment in config/constants.ts. Its barrage is just
       // ordinary pooled enemy bolts — the existing "enemy bolts: move, cull,
@@ -1093,12 +1172,14 @@ export function Scene() {
       // handle them.
       if (bossActive.current && bossRef.current) {
         const boss = bossRef.current;
+        const variant = BOSS.variants[bossVariant.current];
         // Side-to-side sweep, reversing at the arena's own bounds (minus a
         // margin for its own visual footprint) rather than a fixed patrol
         // width — automatically follows whatever ARENA.halfWidth is tuned
-        // to instead of needing its own separately-tuned constant.
+        // to instead of needing its own separately-tuned constant. Speed
+        // is per-variant — the Harrier sweeps noticeably faster.
         const margin = ARENA.halfWidth * 0.25;
-        boss.position.x += bossSweepDir.current * BOSS.sweepSpeed * delta;
+        boss.position.x += bossSweepDir.current * variant.sweepSpeed * delta;
         if (boss.position.x > ARENA.halfWidth - margin) {
           boss.position.x = ARENA.halfWidth - margin;
           bossSweepDir.current = -1;
@@ -1106,7 +1187,7 @@ export function Scene() {
           boss.position.x = -(ARENA.halfWidth - margin);
           bossSweepDir.current = 1;
         }
-        boss.position.z = Math.min(boss.position.z + BOSS.advanceSpeed * delta, BOSS.frontLineZ);
+        boss.position.z = Math.min(boss.position.z + variant.advanceSpeed * delta, BOSS.frontLineZ);
         // A small bob and a slow yaw — purely cosmetic, keeps what would
         // otherwise read as a flat sprite gliding on rails feeling alive.
         boss.rotation.y += delta * 0.15;
@@ -1114,18 +1195,18 @@ export function Scene() {
 
         // Two independent scale effects combine multiplicatively into one
         // final transform: the slow telegraph swell (below) building toward
-        // each barrage, and the sharp per-hit recoil pop (see
+        // each attack, and the sharp per-hit recoil pop (see
         // bossHitFlashUntil's own comment) — unrelated timings, so neither
         // resets or fights the other by sharing a single scale write.
         let scaleMultiplier = 1;
 
         // Telegraph: a visible "winding up" swell in the last
-        // BOSS.telegraphDuration seconds before each barrage — an
+        // BOSS.telegraphDuration seconds before each attack — an
         // ever-growing scale pulse (transform-only, same trick as the
         // Heavy variant's own bigger scale, so no material plumbing is
         // needed) that peaks exactly at the instant it fires, then snaps
         // back to normal. Gives a real read-and-react dodge window instead
-        // of the barrage just appearing with zero warning.
+        // of the attack just appearing with zero warning.
         const timeToFire = bossNextFireAt.current - simTime.current;
         if (timeToFire > 0 && timeToFire <= BOSS.telegraphDuration) {
           const chargeT = 1 - timeToFire / BOSS.telegraphDuration;
@@ -1141,19 +1222,31 @@ export function Scene() {
 
         if (simTime.current >= bossNextFireAt.current) {
           bossNextFireAt.current =
-            simTime.current + BOSS.fireIntervalMin + Math.random() * (BOSS.fireIntervalMax - BOSS.fireIntervalMin);
+            simTime.current + variant.fireIntervalMin + Math.random() * (variant.fireIntervalMax - variant.fireIntervalMin);
           // No explicit scale reset needed here — the combined
           // telegraph+hit-flash multiplier above already recomputes the
           // correct scale fresh every frame from these refs directly, so
           // rescheduling bossNextFireAt is enough to fall out of the
           // telegraph condition on its own next frame.
-          // A fanned barrage, not a single shot — the boss occupying one
-          // enemy "slot" worth of danger the whole fight would otherwise
-          // undersell replacing 40 enemies with it.
-          const half = (BOSS.spreadCount - 1) / 2;
-          for (let i = 0; i < BOSS.spreadCount; i++) {
-            const offsetX = (i - half) * (BOSS.spreadWidth / (BOSS.spreadCount - 1));
-            spawn(enemyBolts.current, new THREE.Vector3(boss.position.x + offsetX, boss.position.y, boss.position.z));
+          if (variant.aimed) {
+            // The Harrier's single precision-aimed shot: spawned at the
+            // SHIP's own current x/y (not the boss's) so it reliably tracks
+            // through wherever the ship actually is as it travels in z —
+            // the same "fixed x/y at spawn" bolt model every other shot in
+            // the game already uses, just aimed at a different point than
+            // the shooter's own position. A real, dodgeable threat rather
+            // than an unavoidable snap-hit: the telegraph above still gives
+            // a full warning window before it fires.
+            spawn(enemyBolts.current, new THREE.Vector3(ship.position.x, ship.position.y, boss.position.z));
+          } else {
+            // A fanned barrage, not a single shot — the boss occupying one
+            // enemy "slot" worth of danger the whole fight would otherwise
+            // undersell replacing 40 enemies with it.
+            const half = (variant.spreadCount - 1) / 2;
+            for (let i = 0; i < variant.spreadCount; i++) {
+              const offsetX = variant.spreadCount > 1 ? (i - half) * (variant.spreadWidth / (variant.spreadCount - 1)) : 0;
+              spawn(enemyBolts.current, new THREE.Vector3(boss.position.x + offsetX, boss.position.y, boss.position.z));
+            }
           }
           sound.enemyFire();
         }
@@ -1265,8 +1358,8 @@ export function Scene() {
           if (bossActive.current && bossRef.current) {
             bossRef.current.position.set(0, (ARENA.minY + ARENA.maxY) / 2, FORMATION.startZ);
             bossSweepDir.current = Math.random() < 0.5 ? -1 : 1;
-            bossNextFireAt.current =
-              BOSS.fireIntervalMin + Math.random() * (BOSS.fireIntervalMax - BOSS.fireIntervalMin);
+            const variant = BOSS.variants[bossVariant.current];
+            bossNextFireAt.current = variant.fireIntervalMin + Math.random() * (variant.fireIntervalMax - variant.fireIntervalMin);
           }
         }
       }
@@ -1620,7 +1713,7 @@ export function Scene() {
           group's transform the way 40 instanced enemies share the
           formation's sway/advance. Hidden by default; spawnWave shows it
           only during a boss wave (see BOSS in config/constants.ts). */}
-      <Boss ref={bossRef} />
+      <Boss ref={bossRef} variant={bossVariantVisual} />
 
       {playerBolts.current.refs.map((ref, i) => (
         <Projectile key={`p${i}`} ref={ref as React.RefObject<THREE.Mesh>} color={COLORS.phosphor} />
