@@ -55,12 +55,14 @@ export function HUD({
     highScore,
     highWave,
     leaderboard,
+    achievementToast,
     paused,
     bossActive,
     bossHealth,
     bossMaxHealth,
     reset,
     clearBanner,
+    clearAchievementToast,
     togglePause,
   } = useGameStore();
 
@@ -102,6 +104,16 @@ export function HUD({
     const timer = setTimeout(clearBanner, 2200);
     return () => clearTimeout(timer);
   }, [bannerText, clearBanner]);
+
+  // Same transient pattern as the banner above, on its own independent
+  // timer — an achievement toast and a wave/pickup banner can legitimately
+  // be on screen at the same time (they render in different spots) and
+  // shouldn't share one clock.
+  useEffect(() => {
+    if (!achievementToast) return;
+    const timer = setTimeout(clearAchievementToast, 3500);
+    return () => clearTimeout(timer);
+  }, [achievementToast, clearAchievementToast]);
 
   return (
     <div className={compact ? "hud hud--compact" : "hud"}>
@@ -212,6 +224,12 @@ export function HUD({
       {bannerText && (
         <div className="wave-banner" key={bannerText}>
           {bannerText}
+        </div>
+      )}
+
+      {achievementToast && (
+        <div className="achievement-toast" key={achievementToast.id}>
+          {achievementToast.label}
         </div>
       )}
 

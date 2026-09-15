@@ -500,6 +500,9 @@ export function Scene() {
     formation.position.set(0, 0, FORMATION.startZ);
     currentDifficulty.current = waveDifficulty(wave);
 
+    if (wave >= 10) useGameStore.getState().unlockAchievement("wave_10", "הגעת לגל 10! 🏆");
+    if (wave >= 20) useGameStore.getState().unlockAchievement("wave_20", "הגעת לגל 20! 🏆");
+
     // A boss wave (see BOSS.waveInterval) replaces the grid entirely — an
     // all-false mask reuses the exact same per-slot hide loop below instead
     // of a separate code path, so every regular-enemy system (column fire,
@@ -827,6 +830,8 @@ export function Scene() {
 
     const bonus = (wasDiving ? DIVE.killBonus : 0) + (wasHeavy ? ENEMY_VARIANTS.heavy.killBonus : 0);
     useGameStore.getState().registerKill(bonus);
+    useGameStore.getState().unlockAchievement("first_kill", "הריגה ראשונה! 🏆");
+    if (wasHeavy) useGameStore.getState().unlockAchievement("first_heavy", "הפלת אויב כבד ראשון! 🏆");
     if (!options?.noDrop) spawnPickup(new THREE.Vector3(ex, ey, ez));
     aliveCount.current -= 1;
     useGameStore.getState().setEnemiesRemaining(aliveCount.current);
@@ -850,6 +855,7 @@ export function Scene() {
     boss.visible = false;
     bossActive.current = false;
     useGameStore.getState().defeatBoss(BOSS.killScore);
+    useGameStore.getState().unlockAchievement("first_boss", "ניצחון על בוס ראשון! 🏆");
     spawnWave(formation, useGameStore.getState().wave);
     sound.waveClear();
     addShake(0.9);
@@ -891,6 +897,7 @@ export function Scene() {
     addShake(0.7);
     sound.novaBomb();
     useGameStore.getState().collectNova();
+    useGameStore.getState().unlockAchievement("first_nova", "פצצת נובה ראשונה! 🏆");
   }
 
   useFrame((_state, rawDelta) => {

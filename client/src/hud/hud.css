@@ -335,6 +335,40 @@
   100% { opacity: 0; }
 }
 
+/* Bottom-left rather than center-top — the wave-banner spot above already
+   carries wave-clear/pickup/life-lost/nova messages, and the two can
+   legitimately be visible at once (see HUD.tsx's own independent timer for
+   this). Gold accent (matching the game-over panel's own "new record"
+   color) marks this as a distinct "achievement," not just another status
+   update. */
+.achievement-toast {
+  position: absolute;
+  left: 18px;
+  bottom: 90px;
+  /* The .hud root already sets pointer-events: none as its own default,
+     but this is purely decorative and transient regardless — explicit
+     here so it can never intercept a tap meant for the touch joystick
+     that sometimes sits in this same corner on mobile. */
+  pointer-events: none;
+  direction: rtl;
+  font-family: "Consolas", monospace;
+  font-size: 13px;
+  color: #f2c94c;
+  text-shadow: 0 0 10px rgba(242, 201, 76, 0.65);
+  background: rgba(10, 13, 10, 0.75);
+  border: 1px solid rgba(242, 201, 76, 0.5);
+  border-radius: 6px;
+  padding: 10px 16px;
+  animation: achievement-toast-fade 3.5s ease-out forwards;
+}
+
+@keyframes achievement-toast-fade {
+  0% { opacity: 0; transform: translateY(10px); }
+  8% { opacity: 1; transform: translateY(0); }
+  85% { opacity: 1; }
+  100% { opacity: 0; }
+}
+
 .hud-controls {
   position: absolute;
   bottom: 48px;

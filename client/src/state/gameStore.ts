@@ -87,6 +87,28 @@ function settleLeaderboard(score: number, wave: number, prevList: LeaderboardEnt
   return next;
 }
 
+const ACHIEVEMENTS_KEY = "nexus-achievements";
+
+function loadUnlockedAchievements(): Set<string> {
+  try {
+    const raw = localStorage.getItem(ACHIEVEMENTS_KEY);
+    if (!raw) return new Set();
+    const parsed: unknown = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return new Set();
+    return new Set(parsed.filter((x): x is string => typeof x === "string"));
+  } catch {
+    return new Set(); // private browsing / storage disabled / corrupt JSON
+  }
+}
+
+function saveUnlockedAchievements(ids: Set<string>) {
+  try {
+    localStorage.setItem(ACHIEVEMENTS_KEY, JSON.stringify([...ids]));
+  } catch {
+    // Nothing to do if storage is unavailable — same as saveHighScore.
+  }
+}
+
 interface GameState {
   status: GameStatus;
   health: number;
@@ -121,6 +143,18 @@ interface GameState {
   // same persistence rule as highScore/highWave above (not part of
   // `initial`, settled once as a run ends via settleLeaderboard).
   leaderboard: LeaderboardEntry[];
+  // Which achievement ids have EVER been unlocked, across every run this
+  // browser has played — same persistence rule as highScore/leaderboard
+  // (not part of `initial`, survives reset()). unlockAchievement is the
+  // only thing that ever adds to this.
+  unlockedAchievements: Set<string>;
+  // The one currently-showing "achievement unlocked" toast, or null — a
+  // transient UI slot HUD auto-clears after its own animation, same
+  // pattern as bannerText. A second unlock landing in the exact same tick
+  // would overwrite this one before it ever renders (no queue) — accepted
+  // as a rare, harmless edge case rather than engineering a toast queue
+  // for achievements that are each a one-time, temporally distinct event.
+  achievementToast: { id: string; label: string } | null;
   // Freezes Scene's whole simulation branch without ending the run — see
   // useAutoPause.ts for the tab-blur/visibility trigger, and HUD.tsx for
   // the manual toggle + overlay.
@@ -165,6 +199,13 @@ interface GameState {
    * (deliberately NOT routed through registerKill's combo multiplier, which
    * doesn't fit a single one-off reward) and clears bossActive. */
   defeatBoss: (scoreReward: number) => void;
+  /** Unlocks achievement `id` the first time it's ever earned, persists it,
+   * and surfaces a one-off toast — a no-op on every later call once it's
+   * already unlocked. Callers just call this unconditionally at the
+   * moment an achievement's condition is met, rather than checking
+   * unlockedAchievements themselves first. */
+  unlockAchievement: (id: string, label: string) => void;
+  clearAchievementToast: () => void;
   reset: () => void;
 }
 
@@ -203,12 +244,15 @@ function settleHighScore(score: number, wave: number, prevHigh: { highScore: num
 
 const storedHigh = loadHighScore();
 const storedLeaderboard = loadLeaderboard();
+const storedAchievements = loadUnlockedAchievements();
 
 export const useGameStore = create<GameState>((set, get) => ({
   ...initial,
   highScore: storedHigh.score,
   highWave: storedHigh.wave,
   leaderboard: storedLeaderboard,
+  unlockedAchievements: storedAchievements,
+  achievementToast: null,
 
   damageShip: (amount) => {
     const s = get();
@@ -341,6 +385,16 @@ export const useGameStore = create<GameState>((set, get) => ({
         bannerText: `הבוס הובס! +${scoreReward} נקודות — גל ${nextWave} מתקרב`,
       };
     }),
+
+  unlockAchievement: (id, label) => {
+    const s = get();
+    if (s.unlockedAchievements.has(id)) return;
+    const next = new Set(s.unlockedAchievements);
+    next.add(id);
+    saveUnlockedAchievements(next);
+    set({ unlockedAchievements: next, achievementToast: { id, label } });
+  },
+  clearAchievementToast: () => set({ achievementToast: null }),
 
   // Reuses `initial` but stamps a fresh start time — reset() can fire long
   // after module load (every "שחק שוב"), so the frozen initial.runStartedAt
