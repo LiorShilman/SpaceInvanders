@@ -54,6 +54,7 @@ export function HUD({
     weaponExpiresAt,
     highScore,
     highWave,
+    leaderboard,
     paused,
     bossActive,
     bossHealth,
@@ -240,6 +241,34 @@ export function HUD({
               <p className="hud-panel-sub">
                 שיא: {highScore.toLocaleString("he-IL")} (גל {highWave})
               </p>
+            )}
+            {leaderboard.length > 0 && (
+              <div className="hud-leaderboard">
+                <div className="hud-leaderboard-title">חמישיית השיאים</div>
+                <ol className="hud-leaderboard-list">
+                  {leaderboard.map((entry, i) => (
+                    <li
+                      key={`${entry.date}-${i}`}
+                      // Best-effort "this is the run that just ended" tell —
+                      // matched by score+wave rather than the entry's own
+                      // date, since that's the only pair HUD already has on
+                      // hand here to compare against. A rare false positive
+                      // (an identical earlier run) is a harmless cosmetic
+                      // miss, not a functional one — the board itself is
+                      // still exactly right either way.
+                      className={
+                        entry.score === score && entry.wave === wave
+                          ? "hud-leaderboard-row hud-leaderboard-row--current"
+                          : "hud-leaderboard-row"
+                      }
+                    >
+                      <span className="hud-leaderboard-rank">{i + 1}</span>
+                      <span className="hud-leaderboard-score">{entry.score.toLocaleString("he-IL")}</span>
+                      <span className="hud-leaderboard-wave">גל {entry.wave}</span>
+                    </li>
+                  ))}
+                </ol>
+              </div>
             )}
             <button onClick={reset}>שחק שוב</button>
           </div>

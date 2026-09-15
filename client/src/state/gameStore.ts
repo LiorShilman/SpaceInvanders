@@ -16,6 +16,8 @@ const WEAPON_LABELS: Record<WeaponKind, string> = {
 
 const HIGH_SCORE_KEY = "nexus-high-score";
 const HIGH_WAVE_KEY = "nexus-high-wave";
+const LEADERBOARD_KEY = "nexus-leaderboard";
+const LEADERBOARD_SIZE = 5;
 
 function loadHighScore(): { score: number; wave: number } {
   try {
@@ -36,6 +38,53 @@ function saveHighScore(score: number, wave: number) {
     // Nothing to do if storage is unavailable — the in-memory value this
     // session still works, it just won't survive a reload.
   }
+}
+
+export interface LeaderboardEntry {
+  score: number;
+  wave: number;
+  date: string; // ISO timestamp — HUD formats it for display
+}
+
+function loadLeaderboard(): LeaderboardEntry[] {
+  try {
+    const raw = localStorage.getItem(LEADERBOARD_KEY);
+    if (!raw) return [];
+    const parsed: unknown = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return [];
+    // Defensive against a hand-edited or stale-shape localStorage value —
+    // only keep entries that actually look like a LeaderboardEntry.
+    return parsed
+      .filter(
+        (e): e is LeaderboardEntry =>
+          typeof e === "object" && e !== null && typeof e.score === "number" && typeof e.wave === "number",
+      )
+      .slice(0, LEADERBOARD_SIZE);
+  } catch {
+    return []; // private browsing / storage disabled / corrupt JSON
+  }
+}
+
+function saveLeaderboard(list: LeaderboardEntry[]) {
+  try {
+    localStorage.setItem(LEADERBOARD_KEY, JSON.stringify(list));
+  } catch {
+    // Nothing to do if storage is unavailable — same as saveHighScore.
+  }
+}
+
+/** Inserts this run's result into the top-LEADERBOARD_SIZE list by score
+ * and persists it, but only if it actually cracked the list — a run that
+ * doesn't place needs no write and returns the exact same array reference
+ * (so callers can skip re-rendering on a no-op). Zero-score runs are never
+ * recorded; an empty run isn't a "score" worth cluttering the board with. */
+function settleLeaderboard(score: number, wave: number, prevList: LeaderboardEntry[]): LeaderboardEntry[] {
+  if (score <= 0) return prevList;
+  const entry: LeaderboardEntry = { score, wave, date: new Date().toISOString() };
+  const next = [...prevList, entry].sort((a, b) => b.score - a.score).slice(0, LEADERBOARD_SIZE);
+  if (!next.includes(entry)) return prevList; // didn't crack the top LEADERBOARD_SIZE
+  saveLeaderboard(next);
+  return next;
 }
 
 interface GameState {
@@ -68,6 +117,10 @@ interface GameState {
   // reset() (a shallow merge, not a replace) never touches these.
   highScore: number;
   highWave: number;
+  // Top LEADERBOARD_SIZE runs by score, newest-qualifying-run-inclusive —
+  // same persistence rule as highScore/highWave above (not part of
+  // `initial`, settled once as a run ends via settleLeaderboard).
+  leaderboard: LeaderboardEntry[];
   // Freezes Scene's whole simulation branch without ending the run — see
   // useAutoPause.ts for the tab-blur/visibility trigger, and HUD.tsx for
   // the manual toggle + overlay.
@@ -149,11 +202,13 @@ function settleHighScore(score: number, wave: number, prevHigh: { highScore: num
 }
 
 const storedHigh = loadHighScore();
+const storedLeaderboard = loadLeaderboard();
 
 export const useGameStore = create<GameState>((set, get) => ({
   ...initial,
   highScore: storedHigh.score,
   highWave: storedHigh.wave,
+  leaderboard: storedLeaderboard,
 
   damageShip: (amount) => {
     const s = get();
@@ -174,7 +229,8 @@ export const useGameStore = create<GameState>((set, get) => ({
       });
     } else {
       const high = settleHighScore(s.score, s.wave, s);
-      set({ health: 0, status: "gameover", ...high });
+      const leaderboard = settleLeaderboard(s.score, s.wave, s.leaderboard);
+      set({ health: 0, status: "gameover", ...high, leaderboard });
     }
   },
 
@@ -193,7 +249,8 @@ export const useGameStore = create<GameState>((set, get) => ({
       return true;
     }
     const high = settleHighScore(s.score, s.wave, s);
-    set({ health: 0, status: "gameover", ...high });
+    const leaderboard = settleLeaderboard(s.score, s.wave, s.leaderboard);
+    set({ health: 0, status: "gameover", ...high, leaderboard });
     return false;
   },
 

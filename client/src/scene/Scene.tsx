@@ -13,6 +13,7 @@ import {
   PROJECTILE,
   SHIELD,
   SHIP,
+  WAVE_ENTRANCE_DURATION,
   WAVE_SCALING,
   WEAPON,
 } from "../config/constants";
@@ -205,6 +206,17 @@ function shieldTierForFraction(fraction: number): 0 | 1 | 2 {
   if (fraction > 0.66) return 0;
   if (fraction > 0.33) return 1;
   return 2;
+}
+
+/** "Back out" easing: overshoots slightly past 1 before settling exactly at
+ * 1 when t=1 — used for the wave/boss entrance scale-in (see
+ * WAVE_ENTRANCE_DURATION) so a fresh wave reads as physically "snapping
+ * into place" rather than a flat linear or ease-out grow. */
+function easeOutBack(t: number): number {
+  const c1 = 1.70158;
+  const c3 = c1 + 1;
+  const x = t - 1;
+  return 1 + c3 * x * x * x + c1 * x * x;
 }
 
 /** Per-wave difficulty: wave 1 is exactly the FORMATION baseline. */
@@ -450,6 +462,12 @@ export function Scene() {
 
   const fireCooldown = useRef(0);
   const simTime = useRef(0);
+  // simTime-based deadline for the wave-entrance scale-in (see
+  // WAVE_ENTRANCE_DURATION and easeOutBack) — set by spawnWave, read every
+  // frame until it elapses. Only a fresh spawnWave triggers this, not the
+  // life-loss push-back reset (that's the same wave's own enemies just
+  // repositioned back to start, not new content arriving).
+  const waveEntranceUntil = useRef(0);
   const prevStatus = useRef<string | null>(null);
   // Recomputed by spawnWave() each wave — read by the sway/advance formula
   // and the enemy-fire scheduler instead of the raw FORMATION constants, so
@@ -586,6 +604,7 @@ export function Scene() {
 
     fireCooldown.current = 0;
     simTime.current = 0;
+    waveEntranceUntil.current = WAVE_ENTRANCE_DURATION;
 
     // Every enemy's transform was just explicitly set above (alive or
     // hidden) regardless of whatever it was doing in the previous wave, so
@@ -930,6 +949,8 @@ export function Scene() {
           diveWorldPosArr: diveWorldPos.current,
           nextDiveAtRef: nextDiveAt,
           currentDifficultyRef: currentDifficulty,
+          waveEntranceUntilRef: waveEntranceUntil,
+          formationScaleRef: formation.scale,
           bossRef,
           bossActiveRef: bossActive,
           bossHealthRef: bossHealth,
@@ -1049,6 +1070,20 @@ export function Scene() {
         FORMATION.startZ + simTime.current * currentDifficulty.current.advanceSpeed,
         FORMATION.frontLineZ,
       );
+
+      // --- wave entrance: the whole formation scales in from nothing right
+      // after spawning (see WAVE_ENTRANCE_DURATION/easeOutBack) instead of
+      // just instantly appearing fully formed — a brief "arrival" beat. A
+      // parent-group scale, not a per-enemy one: cheap (one write instead
+      // of 40), and composes automatically with each instance's own
+      // already-correct local transform (Heavy scale, dive tilt, etc.)
+      // without touching any of that per-enemy logic at all.
+      if (simTime.current < waveEntranceUntil.current) {
+        const entranceT = THREE.MathUtils.clamp(simTime.current / waveEntranceUntil.current, 0, 1);
+        formation.scale.setScalar(easeOutBack(entranceT));
+      } else {
+        formation.scale.setScalar(1);
+      }
 
       // --- enemy diving/flanking: launch a new one on cooldown ---------------
       // See DIVE's own comment in config/constants.ts for the overall shape.
@@ -1211,12 +1246,23 @@ export function Scene() {
         boss.rotation.y += delta * 0.15;
         boss.position.y = (ARENA.minY + ARENA.maxY) / 2 + Math.sin(simTime.current * 0.8) * 0.6;
 
-        // Two independent scale effects combine multiplicatively into one
-        // final transform: the slow telegraph swell (below) building toward
-        // each attack, and the sharp per-hit recoil pop (see
-        // bossHitFlashUntil's own comment) — unrelated timings, so neither
-        // resets or fights the other by sharing a single scale write.
+        // Three independent scale effects combine multiplicatively into
+        // one final transform: the wave-entrance scale-in just below, the
+        // slow telegraph swell building toward each attack, and the sharp
+        // per-hit recoil pop (see bossHitFlashUntil's own comment) —
+        // unrelated timings, so none of them reset or fight each other by
+        // sharing a single scale write.
         let scaleMultiplier = 1;
+
+        // Entrance: see WAVE_ENTRANCE_DURATION/easeOutBack's own comment on
+        // the grunt formation's identical use of this — same "snaps into
+        // place" arrival beat, just multiplied in here instead of written
+        // to a separate parent group, since the boss has no such group of
+        // its own.
+        if (simTime.current < waveEntranceUntil.current) {
+          const entranceT = THREE.MathUtils.clamp(simTime.current / waveEntranceUntil.current, 0, 1);
+          scaleMultiplier *= easeOutBack(entranceT);
+        }
 
         // Telegraph: a visible "winding up" swell in the last
         // BOSS.telegraphDuration seconds before each attack — an

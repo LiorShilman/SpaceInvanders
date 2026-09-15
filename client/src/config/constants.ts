@@ -237,6 +237,13 @@ export const ENEMY_VARIANTS = {
   },
 };
 
+// How long a fresh wave (or a fresh boss) takes to scale in from nothing
+// once it spawns, instead of just instantly appearing fully formed — see
+// Scene.tsx's own use of this for both the grunt formation and the boss.
+// Shared by both rather than two separately-tuned values since there's no
+// reason for "how long the arrival beat lasts" to differ between them.
+export const WAVE_ENTRANCE_DURATION = 0.45;
+
 export const FORMATION = {
   // The original arcade wave is 11x5 (55 invaders); we don't quite match
   // that (bigger, more detailed models need more breathing room per unit
