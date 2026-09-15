@@ -27,12 +27,31 @@ export const Grenade = forwardRef<THREE.Group>(function Grenade(_props, ref) {
 
   return (
     <group ref={ref} visible={false}>
+      {/* The dark metal casing was originally a solid, opaque, lit
+          (meshStandardMaterial) shell — which fully occluded the bright
+          core sitting inside it AND, being both small and nearly black
+          (COLORS.enemyHullDark) against open space, was itself almost
+          impossible to spot. transparent + depthWrite={false} lets the
+          glowing core underneath show straight through, the same
+          "translucent shell around a bright core" trick EnemyBolt.tsx
+          already uses for exactly this reason. Sized up from the original
+          0.14/0.07 too — next to a 0.6-long player bolt or a 0.16-radius
+          enemy bolt, those were too small to read at a glance while
+          actually flying. */}
       <mesh>
-        <icosahedronGeometry args={[0.14, 0]} />
-        <meshStandardMaterial color={COLORS.enemyHullDark} metalness={0.5} roughness={0.5} flatShading />
+        <icosahedronGeometry args={[0.22, 0]} />
+        <meshStandardMaterial
+          color={COLORS.enemyHullDark}
+          metalness={0.6}
+          roughness={0.4}
+          flatShading
+          transparent
+          opacity={0.55}
+          depthWrite={false}
+        />
       </mesh>
       <mesh ref={coreRef}>
-        <sphereGeometry args={[0.07, 8, 8]} />
+        <sphereGeometry args={[0.12, 8, 8]} />
         <meshBasicMaterial color={COLORS.grenade} transparent opacity={1} toneMapped={false} />
       </mesh>
     </group>
