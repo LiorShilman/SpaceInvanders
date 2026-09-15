@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { useGameStore } from "../state/gameStore";
+import { ACHIEVEMENTS, useGameStore } from "../state/gameStore";
 import { SHIP } from "../config/constants";
 import { isMuted, setMuted } from "../audio/sound";
 import "./hud.css";
@@ -56,6 +56,7 @@ export function HUD({
     highWave,
     leaderboard,
     achievementToast,
+    unlockedAchievements,
     paused,
     bossActive,
     bossHealth,
@@ -76,6 +77,11 @@ export function HUD({
     setMuted(next);
     setMutedState(next);
   };
+
+  // Pure view state, not game state — which panel (if any) is open never
+  // needs to survive a reset or be read from anywhere else, unlike
+  // `paused` (which Scene's own simulation reads every frame).
+  const [showAchievements, setShowAchievements] = useState(false);
 
   // Real wall-clock elapsed time (not the simulation's own clock — see the
   // note on runStartedAt in gameStore) — ticks every second on its own,
@@ -190,6 +196,22 @@ export function HUD({
           <button className="anaglyph-toggle" onClick={toggleMuted} data-active={!muted}>
             {compact ? (muted ? "🔇" : "🔊") : muted ? "🔇 שקט" : "🔊 קול"}
           </button>
+          <button
+            className="anaglyph-toggle"
+            onClick={() => {
+              // Opening it while actually playing pauses the run — same
+              // reasoning as auto-pause-on-blur: reading a panel that
+              // covers the action while enemies keep advancing/firing
+              // unseen is exactly the kind of "surprise" that shouldn't
+              // happen. Never auto-resumes on close, for the same reason
+              // auto-pause itself never does (see useAutoPause.ts).
+              if (!showAchievements && status === "playing") useGameStore.getState().pause();
+              setShowAchievements((v) => !v);
+            }}
+            data-active={showAchievements}
+          >
+            {compact ? "🏆" : "🏆 הישגים"}
+          </button>
           <button className="anaglyph-toggle" onClick={onToggleAnaglyph} data-active={anaglyph}>
             {compact ? "🔴🔵" : <>🔴🔵 {anaglyph ? "תלת-ממד פעיל — כיבוי" : "משקפי אדום-כחול (3)"}</>}
           </button>
@@ -233,11 +255,53 @@ export function HUD({
         </div>
       )}
 
-      {paused && status === "playing" && (
+      {/* Hidden while the achievements panel is open — that panel is the
+          only reason this pause happened (see the toggle button above),
+          and its own close button resumes the run itself; showing both
+          overlays at once would stack two competing "resume" controls. */}
+      {paused && status === "playing" && !showAchievements && (
         <div className="hud-overlay">
           <div className="hud-panel">
             <h1>מושהה</h1>
             <button onClick={togglePause}>המשך</button>
+          </div>
+        </div>
+      )}
+
+      {showAchievements && (
+        <div className="hud-overlay">
+          <div className="hud-panel hud-panel--achievements">
+            <h1>הישגים</h1>
+            <ul className="achievements-list">
+              {ACHIEVEMENTS.map((a) => {
+                const unlocked = unlockedAchievements.has(a.id);
+                return (
+                  <li
+                    key={a.id}
+                    className={unlocked ? "achievements-row achievements-row--unlocked" : "achievements-row"}
+                  >
+                    <span className="achievements-icon">{unlocked ? "🏆" : "🔒"}</span>
+                    <span className="achievements-text">
+                      <span className="achievements-label">{a.label}</span>
+                      <span className="achievements-desc">{a.description}</span>
+                    </span>
+                  </li>
+                );
+              })}
+            </ul>
+            <button
+              onClick={() => {
+                setShowAchievements(false);
+                // An explicit close is a deliberate "back to the game" —
+                // unlike auto-pause-on-blur (an involuntary interruption
+                // that deliberately never auto-resumes), the player just
+                // asked to return, so resume right away rather than
+                // leaving them stuck paused with no visible way out.
+                useGameStore.getState().resume();
+              }}
+            >
+              סגור
+            </button>
           </div>
         </div>
       )}

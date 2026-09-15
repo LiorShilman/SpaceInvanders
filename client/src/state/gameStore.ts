@@ -87,6 +87,25 @@ function settleLeaderboard(score: number, wave: number, prevList: LeaderboardEnt
   return next;
 }
 
+export interface AchievementDef {
+  id: string;
+  label: string;
+  description: string;
+}
+
+/** The full catalog — both locked and unlocked entries render from this
+ * (see HUD's achievements panel), and unlockAchievement looks its own
+ * label up here too, so the text exists in exactly one place rather than
+ * being duplicated at every call site that unlocks one. */
+export const ACHIEVEMENTS: AchievementDef[] = [
+  { id: "first_kill", label: "הריגה ראשונה", description: "השמד אויב אחד" },
+  { id: "first_heavy", label: "פורץ שריון", description: "השמד אויב כבד אחד" },
+  { id: "first_boss", label: "צייד בוסים", description: "נצח בקרב בוס" },
+  { id: "first_nova", label: "פיצוץ נובה", description: "הפעל פצצת נובה" },
+  { id: "wave_10", label: "עשרה גלים", description: "הגע לגל 10" },
+  { id: "wave_20", label: "עשרים גלים", description: "הגע לגל 20" },
+];
+
 const ACHIEVEMENTS_KEY = "nexus-achievements";
 
 function loadUnlockedAchievements(): Set<string> {
@@ -199,12 +218,13 @@ interface GameState {
    * (deliberately NOT routed through registerKill's combo multiplier, which
    * doesn't fit a single one-off reward) and clears bossActive. */
   defeatBoss: (scoreReward: number) => void;
-  /** Unlocks achievement `id` the first time it's ever earned, persists it,
-   * and surfaces a one-off toast — a no-op on every later call once it's
-   * already unlocked. Callers just call this unconditionally at the
+  /** Unlocks achievement `id` (looked up in the ACHIEVEMENTS catalog) the
+   * first time it's ever earned, persists it, and surfaces a one-off
+   * toast — a no-op on every later call once it's already unlocked, and
+   * on an unrecognized id. Callers just call this unconditionally at the
    * moment an achievement's condition is met, rather than checking
    * unlockedAchievements themselves first. */
-  unlockAchievement: (id: string, label: string) => void;
+  unlockAchievement: (id: string) => void;
   clearAchievementToast: () => void;
   reset: () => void;
 }
@@ -386,13 +406,15 @@ export const useGameStore = create<GameState>((set, get) => ({
       };
     }),
 
-  unlockAchievement: (id, label) => {
+  unlockAchievement: (id) => {
     const s = get();
     if (s.unlockedAchievements.has(id)) return;
+    const def = ACHIEVEMENTS.find((a) => a.id === id);
+    if (!def) return; // unrecognized id — nothing to unlock or show
     const next = new Set(s.unlockedAchievements);
     next.add(id);
     saveUnlockedAchievements(next);
-    set({ unlockedAchievements: next, achievementToast: { id, label } });
+    set({ unlockedAchievements: next, achievementToast: { id, label: def.label } });
   },
   clearAchievementToast: () => set({ achievementToast: null }),
 
