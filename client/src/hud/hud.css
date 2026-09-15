@@ -369,6 +369,78 @@
   100% { opacity: 0; }
 }
 
+/* Bottom-right, mirroring the achievement toast's own bottom-left spot —
+   90px matches RADAR_PX_RADIUS*2 in HUD.tsx, which scales every blip's
+   world-space offset into this exact pixel space. */
+.radar {
+  position: absolute;
+  right: 18px;
+  bottom: 18px;
+  width: 90px;
+  height: 90px;
+  border-radius: 50%;
+  border: 1px solid rgba(72, 209, 255, 0.35);
+  background: radial-gradient(circle, rgba(16, 21, 14, 0.85), rgba(10, 13, 10, 0.7));
+  overflow: hidden;
+}
+
+/* A small tick at the top of the circle marking "forward" (-Z, toward the
+   formation) — without it there's nothing on the widget itself to anchor
+   "up = ahead" for a player seeing it for the first time. */
+.radar-forward-tick {
+  position: absolute;
+  left: 50%;
+  top: 4px;
+  width: 0;
+  height: 0;
+  margin-left: -4px;
+  border-left: 4px solid transparent;
+  border-right: 4px solid transparent;
+  border-bottom: 6px solid rgba(72, 209, 255, 0.5);
+}
+
+.radar-ship {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 6px;
+  height: 6px;
+  margin: -3px;
+  border-radius: 50%;
+  background: #48d1ff;
+  box-shadow: 0 0 6px rgba(72, 209, 255, 0.8);
+}
+
+/* Positioned at dead center by default (left/top/margin) — the actual
+   per-blip offset is a `transform: translate()` HUD.tsx sets inline, so
+   this only ever needs to define the shared look, not each one's place. */
+.radar-blip {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 7px;
+  height: 7px;
+  margin: -3.5px;
+  border-radius: 50%;
+  background: #ff2e63;
+  box-shadow: 0 0 6px rgba(255, 46, 99, 0.8);
+}
+
+/* The one state that actually matters: still outside the camera's own
+   view right now, so this dot is the ONLY warning it exists at all — an
+   on-screen blip is already visible in the 3D view itself and doesn't
+   need to shout as loud. */
+.radar-blip--offscreen {
+  background: #ff8c3d;
+  box-shadow: 0 0 8px rgba(255, 140, 61, 0.9);
+  animation: radar-blip-pulse 0.6s ease-in-out infinite;
+}
+
+@keyframes radar-blip-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.55; }
+}
+
 .hud-controls {
   position: absolute;
   bottom: 48px;

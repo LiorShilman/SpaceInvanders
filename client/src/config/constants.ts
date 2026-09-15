@@ -350,12 +350,14 @@ export const SHIELD_HEALTH_COLORS = {
   critical: "#ff4d4d", // <= 33% remain
 };
 
-// Enemy diving/flanking: periodically, one alive enemy breaks off from the
+// Enemy diving: periodically, one alive enemy breaks off from the
 // formation's shared sway/advance and flies its own attack run at the ship
-// before looping back to its slot — the "Diver/Flanker" behavior from
-// docs/GAME_PLAN.md's original outline. Deliberately reuses existing
-// systems rather than inventing new ones: a diver that actually reaches the
-// ship costs a life through the exact same HIT_RADIUS.enemyVsShip proximity
+// before looping back to its slot — the "Diver" half of the "Diver/
+// Flanker" behavior from docs/GAME_PLAN.md's original outline (see
+// FLANKER below for the other half — a materially different attack
+// shape, not a reskin of this one). Deliberately reuses existing systems
+// rather than inventing new ones: a diver that actually reaches the ship
+// costs a life through the exact same HIT_RADIUS.enemyVsShip proximity
 // check the stationary formation already triggers, and its one attack shot
 // is a normal pooled enemy bolt, just fired from wherever it actually is
 // mid-dive instead of from a column's shared schedule.
@@ -393,6 +395,45 @@ export const DIVE = {
   // Extra score for downing an enemy mid-dive: exposed and moving fast, same
   // "harder target, bigger reward" logic as the combo multiplier.
   killBonus: 50,
+};
+
+// Enemy flanking: the other half of "Diver/Flanker" — genuinely different
+// from a Diver, not the same swoop with new numbers. A Diver's whole path
+// stays roughly in front of the ship, arcing toward a point just behind/
+// above it; a Flanker loops FAR out to one side first — past
+// ARENA.halfWidth, typically outside the camera's own view entirely — then
+// cuts back in for a close pass alongside the ship at the ship's own
+// depth. That off-screen leg is the point: without some way to know it's
+// coming, it's just an invisible threat, so Scene.tsx also feeds every
+// active flanker's ship-relative position to a radar HUD element (see
+// gameStore's radarBlips) whenever it's genuinely outside the camera's
+// frustum. Reuses the same underlying systems as DIVE otherwise — the
+// exact same HIT_RADIUS.enemyVsShip proximity check for "reached the
+// ship," a normal pooled enemy bolt for its own attack shot.
+export const FLANKER = {
+  cooldownMin: 6,
+  cooldownMax: 10,
+  graceAfterWaveStart: 4,
+  maxConcurrent: 1,
+  duration: 4.2, // longer than a Diver's — it physically travels much further
+  // How far past ARENA.halfWidth it loops out to on its wide leg —
+  // comfortably beyond what the camera's own forward view ever shows at
+  // the ship's usual operating depth, so this is genuinely the "you can't
+  // see it coming" leg the radar exists for.
+  wideOffset: 10,
+  // How strongly the second half of the run (the cut-in) pulls toward the
+  // ship's own actual position, once it's already out at its widest — a
+  // real attack pass close alongside the ship, not just a wide detour that
+  // happens to wander back to its own slot on its own.
+  approachPull: 0.85,
+  firePhase: 0.62,
+  // A rarer, more deliberately-earned kill than a Diver's — the whole
+  // point is it's harder to even see coming — so the bonus is bigger.
+  killBonus: 70,
+  // World-unit radius the radar widget considers "in range" — beyond this
+  // a blip still shows, clamped to the radar's own edge in the right
+  // direction, same convention as any minimap.
+  radarRange: 26,
 };
 
 // Boss waves: every BOSS.waveInterval-th wave replaces the normal grid

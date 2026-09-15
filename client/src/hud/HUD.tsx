@@ -1,8 +1,23 @@
 import { useEffect, useState } from "react";
 import { ACHIEVEMENTS, useGameStore } from "../state/gameStore";
-import { SHIP } from "../config/constants";
+import { FLANKER, SHIP } from "../config/constants";
 import { isMuted, setMuted } from "../audio/sound";
 import "./hud.css";
+
+// Widget's own pixel radius (must match the CSS width/2) — used to scale a
+// blip's world-space offset into the widget's screen space.
+const RADAR_PX_RADIUS = 45;
+
+/** Maps a world-space (dx, dz) offset from the ship into the radar
+ * widget's own pixel space, clamped to its edge (direction preserved) once
+ * the real distance exceeds FLANKER.radarRange — the same "still shows,
+ * just pinned to the rim" convention any minimap uses for a far-off
+ * target. */
+function radarOffset(dx: number, dz: number): { x: number; y: number } {
+  const dist = Math.hypot(dx, dz) || 0.0001;
+  const scale = (Math.min(dist, FLANKER.radarRange) / dist) * (RADAR_PX_RADIUS / FLANKER.radarRange);
+  return { x: dx * scale, y: dz * scale };
+}
 
 interface HUDProps {
   anaglyph: boolean;
@@ -57,6 +72,7 @@ export function HUD({
     leaderboard,
     achievementToast,
     unlockedAchievements,
+    radarBlips,
     paused,
     bossActive,
     bossHealth,
@@ -363,6 +379,31 @@ export function HUD({
             <span dir="ltr">WASD</span> / חצים — תנועה &nbsp;·&nbsp; <span dir="ltr">Z/C</span> — קדימה/אחורה
             &nbsp;·&nbsp; רווח / עכבר שמאלי — ירי
           </span>
+        </div>
+      )}
+
+      {/* A permanent instrument, not something that only appears once
+          needed — always visible during play (bottom-right, mirroring the
+          achievement toast's own bottom-left spot) so its existence is
+          discoverable before a flanker ever forces the question "where did
+          that shot come from." See FLANKER's own comment in
+          config/constants.ts for why a flanker specifically needs this and
+          nothing else in the game does: its whole wide leg is deliberately
+          spent outside the camera's own view. */}
+      {status === "playing" && (
+        <div className="radar">
+          <div className="radar-forward-tick" />
+          <div className="radar-ship" />
+          {radarBlips.map((b, i) => {
+            const { x, y } = radarOffset(b.dx, b.dz);
+            return (
+              <div
+                key={i}
+                className={b.offscreen ? "radar-blip radar-blip--offscreen" : "radar-blip"}
+                style={{ transform: `translate(${x}px, ${y}px)` }}
+              />
+            );
+          })}
         </div>
       )}
     </div>

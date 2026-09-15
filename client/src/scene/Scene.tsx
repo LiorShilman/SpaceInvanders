@@ -7,6 +7,7 @@ import {
   COLORS,
   DIVE,
   ENEMY_VARIANTS,
+  FLANKER,
   FORMATION,
   HIT_RADIUS,
   PICKUP,
@@ -364,6 +365,25 @@ export function Scene() {
   const diveWorldPos = useRef<Array<THREE.Vector3 | null>>(Array.from({ length: ENEMY_COUNT }, () => null));
   const nextDiveAt = useRef(DIVE.graceAfterWaveStart);
 
+  // Flanking (see FLANKER in config/constants.ts) — the other half of
+  // "Diver/Flanker," a materially different attack shape from a dive, not
+  // a reskin of it: same overall ref pattern (state + a mirrored current
+  // world position + a single global cooldown gate), kept as its own
+  // fully separate set of refs rather than merged into the dive ones,
+  // since an enemy is never doing both at once and the two have unrelated
+  // durations/geometry.
+  const flankState = useRef<
+    Array<{ startTime: number; startPos: THREE.Vector3; side: 1 | -1; fired: boolean } | null>
+  >(Array.from({ length: ENEMY_COUNT }, () => null));
+  const flankWorldPos = useRef<Array<THREE.Vector3 | null>>(Array.from({ length: ENEMY_COUNT }, () => null));
+  const nextFlankAt = useRef(FLANKER.graceAfterWaveStart);
+  // Radar (see gameStore's radarBlips): throttled to ~12Hz rather than
+  // updated every frame — see radarBlips' own comment for why. Scratch
+  // Frustum/Matrix4 reused every tick instead of allocated fresh.
+  const radarUpdateAccum = useRef(0);
+  const radarFrustum = useRef(new THREE.Frustum());
+  const radarProjScreenMatrix = useRef(new THREE.Matrix4());
+
   // Boss waves (see BOSS in config/constants.ts): every BOSS.waveInterval-th
   // wave replaces the normal grid entirely with this one large, multi-hit
   // enemy. These refs are the simulation's own source of truth — bossActive/
@@ -616,8 +636,11 @@ export function Scene() {
     for (let e = 0; e < ENEMY_COUNT; e++) {
       diveState.current[e] = null;
       diveWorldPos.current[e] = null;
+      flankState.current[e] = null;
+      flankWorldPos.current[e] = null;
     }
     nextDiveAt.current = DIVE.graceAfterWaveStart + Math.random() * (DIVE.cooldownMax - DIVE.cooldownMin);
+    nextFlankAt.current = FLANKER.graceAfterWaveStart + Math.random() * (FLANKER.cooldownMax - FLANKER.cooldownMin);
 
     if (isBossWave) {
       // Health grows on every repeat encounter (wave 10, 15, ...), same
@@ -795,10 +818,12 @@ export function Scene() {
     options?: { forceLethal?: boolean; noDrop?: boolean },
   ) {
     const dive = diveWorldPos.current[e];
+    const flank = flankWorldPos.current[e];
+    const detached = dive ?? flank;
     const local = layout[e];
-    const ex = dive ? dive.x : formation.position.x + local[0];
-    const ey = dive ? dive.y : formation.position.y + local[1];
-    const ez = dive ? dive.z : formation.position.z + local[2];
+    const ex = detached ? detached.x : formation.position.x + local[0];
+    const ey = detached ? detached.y : formation.position.y + local[1];
+    const ez = detached ? detached.z : formation.position.z + local[2];
 
     const wasHeavy = enemyIsHeavy.current[e];
     enemyHealth.current[e] -= options?.forceLethal ? enemyHealth.current[e] : 1;
@@ -815,20 +840,32 @@ export function Scene() {
     enemyChipped.current[e] = false;
     enemyAlive.current[e] = false;
     enemiesRef.current?.setEnemy(e, null);
-    // Downing an enemy mid-dive gets a distinct cyan flash (instead of the
-    // usual amber) and a score bonus — see DIVE.killBonus's own comment
-    // for why: exposed and moving fast is a harder, more deserving target.
-    // A Heavy's own killBonus stacks with that if it happened to be diving
-    // too.
+    // Downing an enemy mid-dive or mid-flank gets a distinct flash color
+    // (instead of the usual amber) and a score bonus — see DIVE.killBonus/
+    // FLANKER.killBonus's own comments for why: exposed and moving fast is
+    // a harder, more deserving target, and a Flanker's bonus is bigger
+    // since it's also the harder one to even see coming. A Heavy's own
+    // killBonus stacks with either if it happened to be diving/flanking
+    // too (an enemy is never doing both of those at once, so at most one
+    // of the two dive/flank bonuses ever applies).
     const wasDiving = dive !== null;
-    explosions.trigger(new THREE.Vector3(ex, ey, ez), wasDiving ? COLORS.accent : COLORS.amber);
+    const wasFlanking = flank !== null;
+    explosions.trigger(
+      new THREE.Vector3(ex, ey, ez),
+      wasFlanking ? COLORS.enemyBolt : wasDiving ? COLORS.accent : COLORS.amber,
+    );
     sound.enemyHit();
     if (wasDiving) {
       diveState.current[e] = null;
       diveWorldPos.current[e] = null;
     }
+    if (wasFlanking) {
+      flankState.current[e] = null;
+      flankWorldPos.current[e] = null;
+    }
 
-    const bonus = (wasDiving ? DIVE.killBonus : 0) + (wasHeavy ? ENEMY_VARIANTS.heavy.killBonus : 0);
+    const bonus =
+      (wasDiving ? DIVE.killBonus : 0) + (wasFlanking ? FLANKER.killBonus : 0) + (wasHeavy ? ENEMY_VARIANTS.heavy.killBonus : 0);
     useGameStore.getState().registerKill(bonus);
     useGameStore.getState().unlockAchievement("first_kill");
     if (wasHeavy) useGameStore.getState().unlockAchievement("first_heavy");
@@ -955,6 +992,9 @@ export function Scene() {
           diveStateArr: diveState.current,
           diveWorldPosArr: diveWorldPos.current,
           nextDiveAtRef: nextDiveAt,
+          flankStateArr: flankState.current,
+          flankWorldPosArr: flankWorldPos.current,
+          nextFlankAtRef: nextFlankAt,
           currentDifficultyRef: currentDifficulty,
           waveEntranceUntilRef: waveEntranceUntil,
           formationScaleRef: formation.scale,
@@ -1211,6 +1251,133 @@ export function Scene() {
         }
       }
 
+      // --- enemy flanking: launch a new one on cooldown -----------------------
+      // See FLANKER's own comment in config/constants.ts for the overall
+      // shape — a materially different attack from a dive, not a reskin.
+      if (simTime.current >= nextFlankAt.current) {
+        let activeFlanks = 0;
+        for (let e = 0; e < ENEMY_COUNT; e++) if (flankState.current[e]) activeFlanks++;
+        if (activeFlanks < FLANKER.maxConcurrent) {
+          const candidates: number[] = [];
+          for (let e = 0; e < ENEMY_COUNT; e++) {
+            // Excludes anything already diving too — an enemy only ever
+            // does one detached attack run at a time.
+            if (enemyAlive.current[e] && !diveState.current[e] && !flankState.current[e]) candidates.push(e);
+          }
+          if (candidates.length > 0) {
+            const chosen = candidates[Math.floor(Math.random() * candidates.length)];
+            const local = layout[chosen];
+            flankState.current[chosen] = {
+              startTime: simTime.current,
+              startPos: new THREE.Vector3(
+                formation.position.x + local[0],
+                formation.position.y + local[1],
+                formation.position.z + local[2],
+              ),
+              side: Math.random() < 0.5 ? -1 : 1,
+              fired: false,
+            };
+          }
+        }
+        nextFlankAt.current =
+          simTime.current + FLANKER.cooldownMin + Math.random() * (FLANKER.cooldownMax - FLANKER.cooldownMin);
+      }
+
+      // --- enemy flanking: advance every in-progress flank --------------------
+      for (let e = 0; e < ENEMY_COUNT; e++) {
+        const flank = flankState.current[e];
+        if (!flank) continue;
+        if (!enemyAlive.current[e]) {
+          // Killed mid-flank — already hidden by the hit-test further down
+          // on an earlier frame; just stop tracking it.
+          flankState.current[e] = null;
+          flankWorldPos.current[e] = null;
+          continue;
+        }
+        const t = (simTime.current - flank.startTime) / FLANKER.duration;
+        if (t >= 1) {
+          flankState.current[e] = null;
+          flankWorldPos.current[e] = null;
+          enemiesRef.current?.setEnemy(
+            e,
+            layout[e],
+            undefined,
+            enemyIsHeavy.current[e] ? ENEMY_VARIANTS.heavy.scale : 1,
+            enemyIsHeavy.current[e],
+          );
+          continue;
+        }
+
+        const local = layout[e];
+        // Same "the formation keeps moving, track it live" reasoning as
+        // the dive's own target — the return endpoint has to be wherever
+        // the slot actually is by the time this flank finishes, not where
+        // it was at launch.
+        const target = new THREE.Vector3(
+          formation.position.x + local[0],
+          formation.position.y + local[1],
+          formation.position.z + local[2],
+        );
+        const pos = flank.startPos.clone().lerp(target, t);
+
+        // Two non-overlapping phase windows, each its own full 0->1->0
+        // envelope (NOT sharing a blend budget with the other — an earlier
+        // version diluted the wide leg's own pull strength by the cut-in's
+        // constant, which left it barely leaving the formation's own
+        // lane at all): the first half swings wide to one side, the
+        // second cuts in close to the ship, and both fade back to 0 at
+        // their own window's edges so the base lerp toward the (live,
+        // still-moving) formation slot above already handles a clean
+        // start/end with no jump.
+        if (t <= 0.5) {
+          // The wide leg: pulls FAR out to one side and almost all the way
+          // to the ship's own depth — deliberately NOT a point behind/
+          // above it like a dive's own swoop, and deliberately close to
+          // the ship's z rather than lingering out at the formation's own
+          // distant depth: the camera's view cone is much NARROWER (in
+          // absolute world units) near the ship than it is far downrange,
+          // so the same lateral throw that would still read as easily
+          // visible out at the formation's depth reliably clears the
+          // frustum entirely out here — which is the one thing this whole
+          // maneuver (and the radar built for it) actually depends on.
+          const wideT = Math.sin((t / 0.5) * Math.PI);
+          const widePoint = new THREE.Vector3(
+            flank.side * (ARENA.halfWidth + FLANKER.wideOffset),
+            ship.position.y,
+            THREE.MathUtils.lerp(flank.startPos.z, ship.position.z, 0.92),
+          );
+          pos.lerp(widePoint, wideT * 0.92);
+        } else {
+          // The cut-in: a real attack pass close alongside the ship once
+          // it's already out at its widest, not a detour that just
+          // happens to wander back to its own slot on its own. Peaks
+          // around t=0.75 (the midpoint of this second window) and fades
+          // back out by t=1, so it peels away again rather than parking
+          // next to the ship.
+          const cutT = Math.sin(((t - 0.5) / 0.5) * Math.PI);
+          const approachPoint = new THREE.Vector3(ship.position.x + flank.side * 1.6, ship.position.y, ship.position.z + 1);
+          pos.lerp(approachPoint, cutT * FLANKER.approachPull);
+        }
+
+        flankWorldPos.current[e] = pos;
+        // A bank/yaw into the turn — a different tilt axis from the dive's
+        // own nose-down pitch, so the two attack types read as visually
+        // distinct even at a glance.
+        enemiesRef.current?.setEnemy(
+          e,
+          [pos.x - formation.position.x, pos.y - formation.position.y, pos.z - formation.position.z],
+          [0, flank.side * 0.3, flank.side * 0.4],
+          enemyIsHeavy.current[e] ? ENEMY_VARIANTS.heavy.scale : 1,
+          enemyIsHeavy.current[e],
+        );
+
+        if (!flank.fired && t >= FLANKER.firePhase) {
+          flank.fired = true;
+          spawn(enemyBolts.current, pos.clone());
+          sound.enemyFire();
+        }
+      }
+
       // --- chipped-enemy blink: an ongoing "wounded" tell -------------------
       // A Heavy that survived a hit (see enemyChipped's own comment) blinks
       // every frame instead of just having flashed a spark once — a chip is
@@ -1332,18 +1499,20 @@ export function Scene() {
       // formation's own position crossed regardless of where the ship
       // happened to be standing. The formation is flat in z (every alive
       // enemy shares formation.position.z), so only x/y actually vary here.
-      // A diving enemy's real (possibly detached-from-formation) position
-      // takes priority when set — this is also exactly how a diver that
-      // swoops right up to the ship costs a life, through the same check a
-      // stationary formation reaching the front line already uses.
+      // A diving OR flanking enemy's real (possibly detached-from-
+      // formation) position takes priority when set — this is also
+      // exactly how either one actually reaching the ship costs a life,
+      // through the same check a stationary formation reaching the front
+      // line already uses. An enemy is never doing both at once, so this
+      // order never actually needs to pick between two non-null values.
       let enemyReachedShip = false;
       for (let e = 0; e < ENEMY_COUNT; e++) {
         if (!enemyAlive.current[e]) continue;
-        const dive = diveWorldPos.current[e];
+        const detached = diveWorldPos.current[e] ?? flankWorldPos.current[e];
         const local = layout[e];
-        const ex = dive ? dive.x : formation.position.x + local[0];
-        const ey = dive ? dive.y : formation.position.y + local[1];
-        const ez = dive ? dive.z : formation.position.z + local[2];
+        const ex = detached ? detached.x : formation.position.x + local[0];
+        const ey = detached ? detached.y : formation.position.y + local[1];
+        const ez = detached ? detached.z : formation.position.z + local[2];
         const dx = ship.position.x - ex;
         const dy = ship.position.y - ey;
         const dz = ship.position.z - ez;
@@ -1430,6 +1599,24 @@ export function Scene() {
           }
           nextDiveAt.current = DIVE.graceAfterWaveStart + Math.random() * (DIVE.cooldownMax - DIVE.cooldownMin);
 
+          // Same snap-back for an in-progress flank — see the dive
+          // cleanup right above for why this is necessary at all.
+          for (let e = 0; e < ENEMY_COUNT; e++) {
+            if (!flankState.current[e]) continue;
+            flankState.current[e] = null;
+            flankWorldPos.current[e] = null;
+            if (enemyAlive.current[e]) {
+              enemiesRef.current?.setEnemy(
+                e,
+                layout[e],
+                undefined,
+                enemyIsHeavy.current[e] ? ENEMY_VARIANTS.heavy.scale : 1,
+                enemyIsHeavy.current[e],
+              );
+            }
+          }
+          nextFlankAt.current = FLANKER.graceAfterWaveStart + Math.random() * (FLANKER.cooldownMax - FLANKER.cooldownMin);
+
           // A boss fight in progress: push it back to its own starting
           // position/timers the same way the formation just was, but its
           // health is untouched — only position resets on a life lost,
@@ -1462,10 +1649,10 @@ export function Scene() {
         let lockedDistSq = LOCK_RADIUS * LOCK_RADIUS;
         for (let e = 0; e < ENEMY_COUNT; e++) {
           if (!enemyAlive.current[e]) continue;
-          const dive = diveWorldPos.current[e];
+          const detached = diveWorldPos.current[e] ?? flankWorldPos.current[e];
           const local = layout[e];
-          const ex = dive ? dive.x : formation.position.x + local[0];
-          const ey = dive ? dive.y : formation.position.y + local[1];
+          const ex = detached ? detached.x : formation.position.x + local[0];
+          const ey = detached ? detached.y : formation.position.y + local[1];
           const dx = ship.position.x - ex;
           const dy = ship.position.y - ey;
           const distSq = dx * dx + dy * dy;
@@ -1496,14 +1683,14 @@ export function Scene() {
           // the boss's much bigger one, so it scales up to roughly match.
           lockReticleRef.current.scale.setScalar(BOSS.visualScale / 1.8);
         } else if (lockedEnemy >= 0) {
-          const dive = diveWorldPos.current[lockedEnemy];
+          const detached = diveWorldPos.current[lockedEnemy] ?? flankWorldPos.current[lockedEnemy];
           const local = layout[lockedEnemy];
           lockReticleRef.current.visible = true;
           lockReticleRef.current.scale.setScalar(1);
           lockReticleRef.current.position.set(
-            dive ? dive.x : formation.position.x + local[0],
-            dive ? dive.y : formation.position.y + local[1],
-            dive ? dive.z : formation.position.z + local[2],
+            detached ? detached.x : formation.position.x + local[0],
+            detached ? detached.y : formation.position.y + local[1],
+            detached ? detached.z : formation.position.z + local[2],
           );
         } else {
           lockReticleRef.current.visible = false;
@@ -1514,16 +1701,17 @@ export function Scene() {
       for (let col = 0; col < FORMATION.cols; col++) {
         if (simTime.current < columnNextFire.current[col]) continue;
 
-        // Any alive, non-diving enemy in the column may take this shot
-        // (picked at random) — not always the frontmost, so fire doesn't
-        // monotonously come from the same row for as long as it survives. A
-        // diving enemy is excluded: it's off flying its own attack run, not
-        // sitting at its formation slot, and already gets its own dedicated
-        // shot at the peak of that dive (see the dive-update block above).
+        // Any alive enemy in the column that isn't off on its own attack
+        // run may take this shot (picked at random, not always the
+        // frontmost, so fire doesn't monotonously come from the same row
+        // for as long as it survives) — a diving or flanking enemy is
+        // excluded either way: it's not sitting at its formation slot, and
+        // already gets its own dedicated shot at the right moment in its
+        // own run (see the dive/flank update blocks above).
         const aliveInColumn: number[] = [];
         for (let row = 0; row < FORMATION.rows; row++) {
           const idx = row * FORMATION.cols + col;
-          if (enemyAlive.current[idx] && !diveState.current[idx]) aliveInColumn.push(idx);
+          if (enemyAlive.current[idx] && !diveState.current[idx] && !flankState.current[idx]) aliveInColumn.push(idx);
         }
         if (aliveInColumn.length === 0) continue; // whole column is dead — silent
         const shooter = aliveInColumn[Math.floor(Math.random() * aliveInColumn.length)];
@@ -1721,6 +1909,30 @@ export function Scene() {
             addHitFlash(ship, now);
           }
         }
+      }
+
+      // --- radar: off-screen threat awareness for flankers --------------------
+      // Throttled to ~12Hz rather than every frame — see radarBlips' own
+      // comment in gameStore.ts for why. A flanker's whole wide leg is
+      // deliberately meant to spend real time outside the camera's own
+      // view (see FLANKER.wideOffset) — this is what gives the player a
+      // fair chance to react to it anyway.
+      radarUpdateAccum.current += delta;
+      if (radarUpdateAccum.current >= 0.08) {
+        radarUpdateAccum.current = 0;
+        radarProjScreenMatrix.current.multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse);
+        radarFrustum.current.setFromProjectionMatrix(radarProjScreenMatrix.current);
+        const blips: { dx: number; dz: number; offscreen: boolean }[] = [];
+        for (let e = 0; e < ENEMY_COUNT; e++) {
+          const pos = flankWorldPos.current[e];
+          if (!pos) continue;
+          blips.push({
+            dx: pos.x - ship.position.x,
+            dz: pos.z - ship.position.z,
+            offscreen: !radarFrustum.current.containsPoint(pos),
+          });
+        }
+        useGameStore.getState().setRadarBlips(blips);
       }
     } else {
       // Not playing (game over) — don't leave the ship frozen mid-blink from

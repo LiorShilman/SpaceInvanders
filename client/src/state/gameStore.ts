@@ -40,6 +40,12 @@ function saveHighScore(score: number, wave: number) {
   }
 }
 
+export interface RadarBlip {
+  dx: number; // world units, flanker x minus ship x
+  dz: number; // world units, flanker z minus ship z
+  offscreen: boolean;
+}
+
 export interface LeaderboardEntry {
   score: number;
   wave: number;
@@ -188,6 +194,17 @@ interface GameState {
   bossHealth: number;
   bossMaxHealth: number;
 
+  // Ship-relative position of every currently-active Flanker (see FLANKER
+  // in config/constants.ts), refreshed by Scene at a throttled ~12Hz
+  // (not every frame — this exists for a small radar widget, not
+  // pixel-precise 3D rendering, and updating global state every frame
+  // would re-render the whole HUD 60x/sec for no visible benefit).
+  // `offscreen` is true only when the blip is genuinely outside the
+  // camera's own frustum right now — that's the one the radar actually
+  // needs to warn about, since anything still on-screen is already
+  // visible in the 3D view itself.
+  radarBlips: RadarBlip[];
+
   damageShip: (amount: number) => void;
   /** Scene calls this when the wave's front line crosses FORMATION.invadeZ.
    * Distinct from damageShip: this always costs a full life outright (no
@@ -226,6 +243,11 @@ interface GameState {
    * unlockedAchievements themselves first. */
   unlockAchievement: (id: string) => void;
   clearAchievementToast: () => void;
+  /** Replaces the whole radar blip list — see radarBlips' own comment on
+   * why this is throttled rather than called every frame. No-ops when
+   * both the current and incoming lists are empty, so the overwhelming
+   * majority of frames (no flanker active) never trigger a re-render. */
+  setRadarBlips: (blips: RadarBlip[]) => void;
   reset: () => void;
 }
 
@@ -247,6 +269,7 @@ const initial = {
   bossActive: false,
   bossHealth: 0,
   bossMaxHealth: 0,
+  radarBlips: [] as RadarBlip[],
 };
 
 /** Compares against the currently-stored high score/wave, persists a new
@@ -417,6 +440,12 @@ export const useGameStore = create<GameState>((set, get) => ({
     set({ unlockedAchievements: next, achievementToast: { id, label: def.label } });
   },
   clearAchievementToast: () => set({ achievementToast: null }),
+
+  setRadarBlips: (blips) => {
+    const s = get();
+    if (s.radarBlips.length === 0 && blips.length === 0) return; // no-op — nothing to re-render for
+    set({ radarBlips: blips });
+  },
 
   // Reuses `initial` but stamps a fresh start time — reset() can fire long
   // after module load (every "שחק שוב"), so the frozen initial.runStartedAt
