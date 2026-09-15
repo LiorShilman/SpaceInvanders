@@ -113,7 +113,7 @@ export function HUD({
             <div
               className="health-fill"
               style={{ width: `${healthPct}%` }}
-              data-critical={healthPct <= 25}
+              data-critical={healthPct <= SHIP.criticalHealthPct * 100}
             />
           </div>
         </div>

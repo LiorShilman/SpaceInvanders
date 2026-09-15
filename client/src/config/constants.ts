@@ -114,6 +114,13 @@ export const SHIP = {
   // (bolts pass through) — otherwise a respawn into a still-dense bolt
   // pattern could burn the next life within the same second.
   respawnInvulnerability: 2,
+  // Health fraction at/below which "in real danger" kicks in — drives both
+  // the HUD health bar's own critical (amber) tint and the ship's own
+  // critical-health warning pulse (see Scene.tsx), one shared value so the
+  // two always agree. Was 0.25 — direct feedback called that too late
+  // (nearly dead before any warning at all); 0.4 gives a real window to
+  // react while it's still "getting dangerous," not "already almost over."
+  criticalHealthPct: 0.4,
 };
 
 export const PROJECTILE = {

@@ -987,16 +987,15 @@ export function Scene() {
 
       // --- critical-health warning pulse: a continuous, on-the-ship signal
       // once health drops to the same critical threshold the HUD's own
-      // health bar already uses (hud.css's [data-critical], healthPct<=25)
-      // — a glance at the ship itself should read "in real danger," not
-      // just a number in the corner. Skipped for the split second the
-      // brief hit-flash is already showing (see addHitFlash) so the two
-      // never fight over the exact same parts; wasCritical makes sure
-      // recovering back out of critical (a health pickup, a fresh
-      // respawn) reverts the accent exactly once instead of leaving it
-      // stuck on the last pulsed shade.
+      // health bar already uses (SHIP.criticalHealthPct) — a glance at the
+      // ship itself should read "in real danger," not just a number in the
+      // corner. Skipped for the split second the brief hit-flash is
+      // already showing (see addHitFlash) so the two never fight over the
+      // exact same parts; wasCritical makes sure recovering back out of
+      // critical (a health pickup, a fresh respawn) reverts the accent
+      // exactly once instead of leaving it stuck on the last pulsed shade.
       const health = useGameStore.getState().health;
-      const isCritical = health > 0 && health / SHIP.maxHealth <= 0.25;
+      const isCritical = health > 0 && health / SHIP.maxHealth <= SHIP.criticalHealthPct;
       if (isCritical && hitFlashUntil.current === 0) {
         const pulseT = (Math.sin(now * 0.012) + 1) / 2; // 0..1
         const warnColor = new THREE.Color(baseAccentColor()).lerp(new THREE.Color("#ff3b3b"), 0.15 + pulseT * 0.7);
