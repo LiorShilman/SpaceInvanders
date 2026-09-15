@@ -355,9 +355,17 @@ export const SHIELD_HEALTH_COLORS = {
 export const DIVE = {
   // A global cooldown between dive LAUNCHES (not one per enemy) — keeps how
   // often "something is diving" reads consistently regardless of how many
-  // enemies are left alive in the wave.
+  // enemies are left alive in the wave. Wave 1 baseline; Scene.tsx's own
+  // waveDifficulty() shrinks this per wave the same way it already does
+  // for enemy fire rate (see cooldownShrinkPerWave/minCooldownMin/Max
+  // below) — divers were the one escalating system that stayed completely
+  // flat regardless of wave number, which read as inconsistent once every
+  // other system (advance speed, fire rate, Heavy fraction) kept ramping.
   cooldownMin: 4,
   cooldownMax: 7.5,
+  cooldownShrinkPerWave: 0.94, // matches WAVE_SCALING.fireIntervalShrink
+  minCooldownMin: 1.5,
+  minCooldownMax: 3,
   // No diver in the first few seconds of a fresh wave (or right after a
   // life-loss push-back) — gives the player a moment to read the formation
   // before anything breaks off it.

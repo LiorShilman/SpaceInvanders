@@ -214,10 +214,17 @@ function waveDifficulty(wave: number) {
     Math.pow(WAVE_SCALING.advanceSpeedGrowth, wave - 1),
   );
   const shrink = Math.pow(WAVE_SCALING.fireIntervalShrink, wave - 1);
+  const diveShrink = Math.pow(DIVE.cooldownShrinkPerWave, wave - 1);
   return {
     advanceSpeed: FORMATION.advanceSpeed * growth,
     fireMin: Math.max(WAVE_SCALING.minFireIntervalMin, FORMATION.enemyFireIntervalMin * shrink),
     fireMax: Math.max(WAVE_SCALING.minFireIntervalMax, FORMATION.enemyFireIntervalMax * shrink),
+    // Divers launch more often at higher waves, same escalating-difficulty
+    // spirit as the fire-rate shrink above — was flat regardless of wave
+    // number, which read as inconsistent once every other system here
+    // kept ramping.
+    diveCooldownMin: Math.max(DIVE.minCooldownMin, DIVE.cooldownMin * diveShrink),
+    diveCooldownMax: Math.max(DIVE.minCooldownMax, DIVE.cooldownMax * diveShrink),
   };
 }
 
@@ -922,6 +929,7 @@ export function Scene() {
           diveStateArr: diveState.current,
           diveWorldPosArr: diveWorldPos.current,
           nextDiveAtRef: nextDiveAt,
+          currentDifficultyRef: currentDifficulty,
           bossRef,
           bossActiveRef: bossActive,
           bossHealthRef: bossHealth,
@@ -1073,7 +1081,10 @@ export function Scene() {
         // slot alive already diving, or the whole wave dead) — the next
         // check just tries again later rather than spamming this branch's
         // O(ENEMY_COUNT) scan every single frame.
-        nextDiveAt.current = simTime.current + DIVE.cooldownMin + Math.random() * (DIVE.cooldownMax - DIVE.cooldownMin);
+        {
+          const { diveCooldownMin, diveCooldownMax } = currentDifficulty.current;
+          nextDiveAt.current = simTime.current + diveCooldownMin + Math.random() * (diveCooldownMax - diveCooldownMin);
+        }
       }
 
       // --- enemy diving/flanking: advance every in-progress dive --------------
@@ -1255,7 +1266,10 @@ export function Scene() {
               spawn(enemyBolts.current, new THREE.Vector3(boss.position.x + offsetX, boss.position.y, boss.position.z));
             }
           }
-          sound.enemyFire();
+          // A distinct sound for the Harrier's own aimed shot — see
+          // sound.bossAimedShot's own comment for why.
+          if (variant.aimed) sound.bossAimedShot();
+          else sound.enemyFire();
         }
       }
 

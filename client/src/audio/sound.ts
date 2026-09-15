@@ -126,6 +126,16 @@ export const sound = {
   enemyFire() {
     tone(220, 120, 0.12, { type: "sawtooth", volume: 0.045 });
   },
+  // The Harrier boss variant's single precision-aimed shot (see BOSS.
+  // variants in constants.ts) — a sharp, higher-pitched "zap" instead of
+  // the low sawtooth every other shot in the game uses, giving it its own
+  // audio identity to match how visually distinct that variant already is
+  // (a wide barrage reads as area danger; one accurate laser should sound
+  // like a precise threat, not just another bolt in the mix).
+  bossAimedShot() {
+    tone(1400, 300, 0.18, { type: "square", volume: 0.09 });
+    noiseBurst(0.05, { volume: 0.07, filterFreq: 4200 });
+  },
   enemyHit() {
     noiseBurst(0.15, { volume: 0.16, filterFreq: 2200 });
     tone(500, 80, 0.15, { type: "square", volume: 0.09 });
