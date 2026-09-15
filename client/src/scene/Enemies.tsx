@@ -6,12 +6,26 @@ const LEG_COUNT = 4;
 const SCALE = 1.8; // matches the old per-enemy <group scale={1.8}> wrapper
 
 /**
- * All 40 enemies, as six instanced meshes (one per distinct part: outer
- * shell, inner shell, turret, eye, ring, legs) instead of ~9 individual
- * <mesh> elements per enemy (360 meshes total, one draw call each). Same
- * visual design as the old per-enemy Enemy.tsx, just re-expressed as
- * instance transforms — see Shields.tsx for the same technique applied to
- * the bunkers.
+ * All 40 enemies, as instanced meshes (one per distinct part: outer shell,
+ * inner shell, turret, eye, ring, legs) instead of ~9 individual <mesh>
+ * elements per enemy (360 meshes total, one draw call each). Same visual
+ * design as the old per-enemy Enemy.tsx, just re-expressed as instance
+ * transforms — see Shields.tsx for the same technique applied to the
+ * bunkers.
+ *
+ * Two COMPLETE sets of these parts exist — grunt and heavy — rather than
+ * one shared set with a per-instance color, because a late-set
+ * instanceColor attribute isn't reliably picked up by three.js's shader
+ * recompile (confirmed via an onBeforeCompile diagnostic probe when this
+ * was tried for Shields.tsx; that's why shields use static per-tier meshes
+ * instead too). A Heavy's own color is a real, distinct material this way,
+ * not a per-instance hack — see ENEMY_VARIANTS.heavy for why that
+ * distinction matters (direct feedback: the size difference alone was too
+ * subtle to spot in time). Every enemy lives in exactly one of the two
+ * sets for its whole lifetime (never both, and it never changes which
+ * once spawned) — setEnemy always explicitly hides the OTHER set's
+ * instance for that index too, so there's no way for a stale transform in
+ * the unused set to ever accidentally render.
  *
  * Every enemy shares an identical local part layout (only its own world
  * position differs, and per-leg rotation cycles through LEG_COUNT fixed
@@ -27,6 +41,7 @@ const _m = new THREE.Matrix4();
 const _tiltEuler = new THREE.Euler();
 const _tiltMatrix = new THREE.Matrix4();
 const _scaleMatrix = new THREE.Matrix4();
+const _hideMatrix = new THREE.Matrix4().makeScale(0, 0, 0);
 
 function localMatrix(
   position: [number, number, number],
@@ -60,17 +75,17 @@ export interface EnemiesHandle {
    * applied on top of each part's own fixed local orientation — used for
    * the diving/flanking attack run's nose-down bank (see Scene.tsx); a
    * formation member just sitting in its slot never passes one. `scale` is
-   * an optional uniform multiplier on top of the shared SCALE constant —
-   * used for the Heavy variant (see ENEMY_VARIANTS in config/constants.ts),
-   * a visibly bigger silhouette rather than a color difference (which would
-   * need per-instance instanceColor — see Shields.tsx's own comment on why
-   * that path was abandoned as unreliable). Omitted (or 1) for every
-   * ordinary enemy. */
+   * an optional uniform multiplier on top of the shared SCALE constant,
+   * and `isHeavy` picks which of the two complete part-sets (see this
+   * file's own top comment) this index actually renders in — both exist
+   * for the Heavy variant (see ENEMY_VARIANTS in config/constants.ts) and
+   * are omitted (or false/1) for every ordinary enemy. */
   setEnemy: (
     index: number,
     pos: [number, number, number] | null,
     tilt?: [number, number, number],
     scale?: number,
+    isHeavy?: boolean,
   ) => void;
 }
 
@@ -78,19 +93,67 @@ interface EnemiesProps {
   count: number;
 }
 
+/** One complete set of the six part refs — grunt or heavy (see this
+ * file's own top comment for why there are two). */
+interface PartRefs {
+  shellOuter: React.RefObject<THREE.InstancedMesh | null>;
+  shellInner: React.RefObject<THREE.InstancedMesh | null>;
+  turret: React.RefObject<THREE.InstancedMesh | null>;
+  eye: React.RefObject<THREE.InstancedMesh | null>;
+  ring: React.RefObject<THREE.InstancedMesh | null>;
+  legs: React.RefObject<THREE.InstancedMesh | null>;
+}
+
+/** Writes (or, when `matrix` is null, hides) instance `index` across every
+ * part in one complete set. Shared by both the active set (a real
+ * transform) and the inactive set (always hidden) on every setEnemy call. */
+function writeSetInstance(set: PartRefs, index: number, matrix: THREE.Matrix4 | null) {
+  const bodyParts: [React.RefObject<THREE.InstancedMesh | null>, THREE.Matrix4][] = [
+    [set.shellOuter, PART_LOCAL.shellOuter],
+    [set.shellInner, PART_LOCAL.shellInner],
+    [set.turret, PART_LOCAL.turret],
+    [set.eye, PART_LOCAL.eye],
+    [set.ring, PART_LOCAL.ring],
+  ];
+  for (const [meshRef, local] of bodyParts) {
+    const mesh = meshRef.current;
+    if (!mesh) continue;
+    mesh.setMatrixAt(index, matrix ? matrix.clone().multiply(local) : _hideMatrix);
+    mesh.instanceMatrix.needsUpdate = true;
+  }
+
+  const legs = set.legs.current;
+  if (legs) {
+    for (let leg = 0; leg < LEG_COUNT; leg++) {
+      legs.setMatrixAt(index * LEG_COUNT + leg, matrix ? matrix.clone().multiply(LEG_LOCAL[leg]) : _hideMatrix);
+    }
+    legs.instanceMatrix.needsUpdate = true;
+  }
+}
+
 export const Enemies = forwardRef<EnemiesHandle, EnemiesProps>(function Enemies(
   { count },
   ref,
 ) {
-  const shellOuterRef = useRef<THREE.InstancedMesh>(null);
-  const shellInnerRef = useRef<THREE.InstancedMesh>(null);
-  const turretRef = useRef<THREE.InstancedMesh>(null);
-  const eyeRef = useRef<THREE.InstancedMesh>(null);
-  const ringRef = useRef<THREE.InstancedMesh>(null);
-  const legsRef = useRef<THREE.InstancedMesh>(null);
+  const grunt: PartRefs = {
+    shellOuter: useRef<THREE.InstancedMesh>(null),
+    shellInner: useRef<THREE.InstancedMesh>(null),
+    turret: useRef<THREE.InstancedMesh>(null),
+    eye: useRef<THREE.InstancedMesh>(null),
+    ring: useRef<THREE.InstancedMesh>(null),
+    legs: useRef<THREE.InstancedMesh>(null),
+  };
+  const heavy: PartRefs = {
+    shellOuter: useRef<THREE.InstancedMesh>(null),
+    shellInner: useRef<THREE.InstancedMesh>(null),
+    turret: useRef<THREE.InstancedMesh>(null),
+    eye: useRef<THREE.InstancedMesh>(null),
+    ring: useRef<THREE.InstancedMesh>(null),
+    legs: useRef<THREE.InstancedMesh>(null),
+  };
 
   useImperativeHandle(ref, () => ({
-    setEnemy(index, pos, tilt, scale) {
+    setEnemy(index, pos, tilt, scale, isHeavy) {
       // Translation composed with an optional whole-enemy tilt rotation
       // (the dive attack's nose-down bank) and an optional uniform scale
       // (the Heavy variant) — a stationary, ordinary formation member
@@ -104,31 +167,13 @@ export const Enemies = forwardRef<EnemiesHandle, EnemiesProps>(function Enemies(
         worldTranslation = _m;
       }
 
-      const bodyParts: [React.RefObject<THREE.InstancedMesh | null>, THREE.Matrix4][] = [
-        [shellOuterRef, PART_LOCAL.shellOuter],
-        [shellInnerRef, PART_LOCAL.shellInner],
-        [turretRef, PART_LOCAL.turret],
-        [eyeRef, PART_LOCAL.eye],
-        [ringRef, PART_LOCAL.ring],
-      ];
-      for (const [meshRef, local] of bodyParts) {
-        const mesh = meshRef.current;
-        if (!mesh) continue;
-        const matrix = worldTranslation ? worldTranslation.clone().multiply(local) : new THREE.Matrix4().makeScale(0, 0, 0);
-        mesh.setMatrixAt(index, matrix);
-        mesh.instanceMatrix.needsUpdate = true;
-      }
-
-      const legs = legsRef.current;
-      if (legs) {
-        for (let leg = 0; leg < LEG_COUNT; leg++) {
-          const matrix = worldTranslation
-            ? worldTranslation.clone().multiply(LEG_LOCAL[leg])
-            : new THREE.Matrix4().makeScale(0, 0, 0);
-          legs.setMatrixAt(index * LEG_COUNT + leg, matrix);
-        }
-        legs.instanceMatrix.needsUpdate = true;
-      }
+      const activeSet = isHeavy ? heavy : grunt;
+      const inactiveSet = isHeavy ? grunt : heavy;
+      writeSetInstance(activeSet, index, worldTranslation);
+      // Always explicitly hidden, even when pos is already null — cheap,
+      // and guarantees this index can never render in both sets at once
+      // regardless of call order or a missed edge case elsewhere.
+      writeSetInstance(inactiveSet, index, null);
     },
   }));
 
@@ -147,7 +192,7 @@ export const Enemies = forwardRef<EnemiesHandle, EnemiesProps>(function Enemies(
           where a light happens to hit it at the right specular angle, and
           the eye/ring/turret glow was carrying the entire silhouette
           instead of the body shape itself. */}
-      <instancedMesh ref={shellOuterRef} args={[shellOuterGeo, undefined, count]} frustumCulled={false}>
+      <instancedMesh ref={grunt.shellOuter} args={[shellOuterGeo, undefined, count]} frustumCulled={false}>
         <meshStandardMaterial
           color={COLORS.enemyHull}
           emissive={COLORS.amberDim}
@@ -157,45 +202,73 @@ export const Enemies = forwardRef<EnemiesHandle, EnemiesProps>(function Enemies(
           flatShading
         />
       </instancedMesh>
-      <instancedMesh ref={shellInnerRef} args={[shellInnerGeo, undefined, count]} frustumCulled={false}>
-        <meshStandardMaterial
-          color={COLORS.enemyHullDark}
-          metalness={0.35}
-          roughness={0.65}
-          flatShading
-        />
+      <instancedMesh ref={grunt.shellInner} args={[shellInnerGeo, undefined, count]} frustumCulled={false}>
+        <meshStandardMaterial color={COLORS.enemyHullDark} metalness={0.35} roughness={0.65} flatShading />
       </instancedMesh>
-      <instancedMesh ref={turretRef} args={[turretGeo, undefined, count]} frustumCulled={false}>
-        <meshStandardMaterial
-          color={COLORS.enemyHullDark}
-          metalness={0.4}
-          roughness={0.5}
-          flatShading
-        />
+      <instancedMesh ref={grunt.turret} args={[turretGeo, undefined, count]} frustumCulled={false}>
+        <meshStandardMaterial color={COLORS.enemyHullDark} metalness={0.4} roughness={0.5} flatShading />
       </instancedMesh>
-      <instancedMesh ref={eyeRef} args={[eyeGeo, undefined, count]} frustumCulled={false}>
-        <meshStandardMaterial
-          color={COLORS.amber}
-          emissive={COLORS.amber}
-          emissiveIntensity={1.8}
-          toneMapped={false}
-        />
+      <instancedMesh ref={grunt.eye} args={[eyeGeo, undefined, count]} frustumCulled={false}>
+        <meshStandardMaterial color={COLORS.amber} emissive={COLORS.amber} emissiveIntensity={1.8} toneMapped={false} />
       </instancedMesh>
-      <instancedMesh ref={ringRef} args={[ringGeo, undefined, count]} frustumCulled={false}>
-        <meshStandardMaterial
-          color={COLORS.amber}
-          emissive={COLORS.amber}
-          emissiveIntensity={1.1}
-          toneMapped={false}
-        />
+      <instancedMesh ref={grunt.ring} args={[ringGeo, undefined, count]} frustumCulled={false}>
+        <meshStandardMaterial color={COLORS.amber} emissive={COLORS.amber} emissiveIntensity={1.1} toneMapped={false} />
       </instancedMesh>
-      <instancedMesh ref={legsRef} args={[legGeo, undefined, count * LEG_COUNT]} frustumCulled={false}>
+      <instancedMesh ref={grunt.legs} args={[legGeo, undefined, count * LEG_COUNT]} frustumCulled={false}>
         <meshStandardMaterial
           color={COLORS.enemyHullDark}
           emissive={COLORS.amberDim}
           emissiveIntensity={0.3}
           metalness={0.35}
           roughness={0.65}
+          flatShading
+        />
+      </instancedMesh>
+
+      {/* Heavy variant — same six parts, a cold steel-blue/icy-white
+          material set instead of the grunts' warm magenta-red/amber (see
+          COLORS.enemyHeavy* for why: a real color difference reads at a
+          glance from across the whole formation, not just the bigger
+          silhouette scale already gives it). */}
+      <instancedMesh ref={heavy.shellOuter} args={[shellOuterGeo, undefined, count]} frustumCulled={false}>
+        <meshStandardMaterial
+          color={COLORS.enemyHeavyHull}
+          emissive={COLORS.enemyHeavyAccent}
+          emissiveIntensity={0.3}
+          metalness={0.45}
+          roughness={0.45}
+          flatShading
+        />
+      </instancedMesh>
+      <instancedMesh ref={heavy.shellInner} args={[shellInnerGeo, undefined, count]} frustumCulled={false}>
+        <meshStandardMaterial color={COLORS.enemyHeavyHullDark} metalness={0.4} roughness={0.6} flatShading />
+      </instancedMesh>
+      <instancedMesh ref={heavy.turret} args={[turretGeo, undefined, count]} frustumCulled={false}>
+        <meshStandardMaterial color={COLORS.enemyHeavyHullDark} metalness={0.45} roughness={0.45} flatShading />
+      </instancedMesh>
+      <instancedMesh ref={heavy.eye} args={[eyeGeo, undefined, count]} frustumCulled={false}>
+        <meshStandardMaterial
+          color={COLORS.enemyHeavyAccent}
+          emissive={COLORS.enemyHeavyAccent}
+          emissiveIntensity={1.8}
+          toneMapped={false}
+        />
+      </instancedMesh>
+      <instancedMesh ref={heavy.ring} args={[ringGeo, undefined, count]} frustumCulled={false}>
+        <meshStandardMaterial
+          color={COLORS.enemyHeavyAccent}
+          emissive={COLORS.enemyHeavyAccent}
+          emissiveIntensity={1.1}
+          toneMapped={false}
+        />
+      </instancedMesh>
+      <instancedMesh ref={heavy.legs} args={[legGeo, undefined, count * LEG_COUNT]} frustumCulled={false}>
+        <meshStandardMaterial
+          color={COLORS.enemyHeavyHullDark}
+          emissive={COLORS.enemyHeavyAccent}
+          emissiveIntensity={0.25}
+          metalness={0.4}
+          roughness={0.6}
           flatShading
         />
       </instancedMesh>

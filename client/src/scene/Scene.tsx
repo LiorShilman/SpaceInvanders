@@ -516,6 +516,7 @@ export function Scene() {
         mask[i] ? layout[i] : null,
         undefined,
         isHeavy ? ENEMY_VARIANTS.heavy.scale : 1,
+        isHeavy,
       );
       if (mask[i]) waveCount++;
     }
@@ -1099,7 +1100,13 @@ export function Scene() {
           // rides on the formation group's transform again from here on.
           diveState.current[e] = null;
           diveWorldPos.current[e] = null;
-          enemiesRef.current?.setEnemy(e, layout[e], undefined, enemyIsHeavy.current[e] ? ENEMY_VARIANTS.heavy.scale : 1);
+          enemiesRef.current?.setEnemy(
+            e,
+            layout[e],
+            undefined,
+            enemyIsHeavy.current[e] ? ENEMY_VARIANTS.heavy.scale : 1,
+            enemyIsHeavy.current[e],
+          );
           continue;
         }
 
@@ -1136,6 +1143,7 @@ export function Scene() {
           [pos.x - formation.position.x, pos.y - formation.position.y, pos.z - formation.position.z],
           [swoop * DIVE.maxTilt, 0, dive.lateralSign * swoop * DIVE.maxTilt * 0.6],
           enemyIsHeavy.current[e] ? ENEMY_VARIANTS.heavy.scale : 1,
+          enemyIsHeavy.current[e],
         );
 
         // One dedicated attack shot per dive, fired from wherever it
@@ -1161,7 +1169,7 @@ export function Scene() {
       for (let e = 0; e < ENEMY_COUNT; e++) {
         if (!enemyChipped.current[e] || !enemyAlive.current[e] || diveState.current[e]) continue;
         const blinkOn = Math.floor(simTime.current * 6) % 2 === 0;
-        enemiesRef.current?.setEnemy(e, blinkOn ? layout[e] : null, undefined, ENEMY_VARIANTS.heavy.scale);
+        enemiesRef.current?.setEnemy(e, blinkOn ? layout[e] : null, undefined, ENEMY_VARIANTS.heavy.scale, true);
       }
 
       // --- boss wave: sweep, advance, and barrage fire ------------------------
@@ -1344,7 +1352,13 @@ export function Scene() {
             diveState.current[e] = null;
             diveWorldPos.current[e] = null;
             if (enemyAlive.current[e]) {
-              enemiesRef.current?.setEnemy(e, layout[e], undefined, enemyIsHeavy.current[e] ? ENEMY_VARIANTS.heavy.scale : 1);
+              enemiesRef.current?.setEnemy(
+                e,
+                layout[e],
+                undefined,
+                enemyIsHeavy.current[e] ? ENEMY_VARIANTS.heavy.scale : 1,
+                enemyIsHeavy.current[e],
+              );
             }
           }
           nextDiveAt.current = DIVE.graceAfterWaveStart + Math.random() * (DIVE.cooldownMax - DIVE.cooldownMin);

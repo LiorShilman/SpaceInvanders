@@ -58,6 +58,17 @@ export const COLORS = {
   // visible and the actual body shape unclear.
   enemyHull: "#3d2230",
   enemyHullDark: "#241220",
+  // The Heavy variant (see ENEMY_VARIANTS.heavy): a cold steel-blue hull
+  // and an icy white-blue glow, deliberately nothing like the warm
+  // magenta-red/amber every other enemy uses, so it's recognizable from
+  // across the whole formation at a glance — not just by its slightly
+  // bigger silhouette, which direct feedback found too subtle to spot in
+  // time. Reinforces the "armored/reinforced" read the bigger scale
+  // already gives, on a genuinely different footing (color) rather than
+  // stacking a second size-only cue.
+  enemyHeavyHull: "#2a3550",
+  enemyHeavyHullDark: "#161b2c",
+  enemyHeavyAccent: "#bfe4ff",
   rimLight: "#6fa8ff",
   // Pickups: a third hue family, distinct from both the ship's green and the
   // enemies' magenta-red, so a drifting capsule reads as "neither of those"
