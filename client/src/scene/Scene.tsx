@@ -962,10 +962,17 @@ export function Scene() {
    * force-kills regardless of remaining Heavy health.
    */
   function detonateGrenade(formation: THREE.Group, center: THREE.Vector3) {
+    // The shockwave ring is what actually sells "this hit an AREA" — it
+    // traces GRENADE.blastRadius itself, so it's visually obvious which
+    // enemies were inside it and which weren't, rather than relying on a
+    // couple of small particle bursts at one point to imply that on their
+    // own (see the shockwave/burst distinction in Explosions.tsx).
+    explosions.triggerShockwave(center, GRENADE.blastRadius, COLORS.grenade);
     explosions.trigger(center, COLORS.grenade);
     explosions.trigger(center, COLORS.amber);
+    explosions.trigger(center, "#fff2df"); // hot near-white core, same accent EnemyBolt uses
     sound.grenadeExplode();
-    addShake(0.35);
+    addShake(0.45);
 
     for (let e = 0; e < ENEMY_COUNT; e++) {
       if (!enemyAlive.current[e]) continue;
