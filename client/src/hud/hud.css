@@ -4,6 +4,17 @@
   pointer-events: none;
   font-family: "Segoe UI", Arial, sans-serif;
   color: #d9e5d1;
+  /* Above TouchControls (see touch-controls.css) — both are position:fixed
+     siblings with none of this until now, so with neither stacked
+     explicitly, TouchControls (rendered after HUD in App.tsx) painted OVER
+     every HUD overlay by plain DOM order: the joystick/fire/grenade
+     buttons stayed visible AND clickable on top of the achievements/help/
+     pause/game-over modals on a touch device. This client still only
+     receives clicks where a HUD descendant explicitly sets its own
+     pointer-events (buttons, .hud-overlay) — see that comment on
+     touch-controls.css for why raising this z-index alone doesn't block
+     normal touch-control use everywhere else. */
+  z-index: 20;
 }
 
 .hud-bar {
@@ -241,8 +252,13 @@
 .anaglyph-toggle {
   pointer-events: all;
   font-family: "Consolas", monospace;
-  font-size: 12px;
-  color: #d9e5d1;
+  font-size: 13px;
+  font-weight: bold;
+  /* Was #d9e5d1 — legible by contrast math alone (~13:1 against the dark
+     fill below), but small monospace text at that tone still read as
+     dim/hard to make out in practice. A brighter, whiter tone plus the
+     bold weight above reads noticeably crisper at this size. */
+  color: #eef5f2;
   background: rgba(16, 21, 14, 0.85);
   border: 1px solid #1c5f73;
   border-radius: 5px;
@@ -692,6 +708,114 @@
 }
 
 .achievements-desc {
+  font-size: 12px;
+  color: #7f8f76;
+}
+
+/* Wider than the achievements panel — three sections (controls/threats/
+   pickups) side by side in spirit need more room than a single flat list. */
+.hud-panel--help {
+  min-width: 320px;
+  max-width: min(480px, 90vw);
+  text-align: right;
+}
+
+.help-body {
+  max-height: 62vh;
+  overflow-y: auto;
+  margin: 0 0 20px;
+  /* Room for the scrollbar so it doesn't sit flush against the last
+     section's own text in a narrow viewport. */
+  padding-inline-start: 4px;
+}
+
+.help-section + .help-section {
+  margin-top: 18px;
+}
+
+.help-section-title {
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  color: #7f8f76;
+  text-transform: uppercase;
+  margin-bottom: 8px;
+  padding-bottom: 4px;
+  border-bottom: 1px solid rgba(217, 229, 209, 0.12);
+}
+
+.help-controls-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.help-controls-row {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+}
+
+.help-key {
+  font-family: "Consolas", monospace;
+  font-size: 12px;
+  color: #48d1ff;
+  background: rgba(72, 209, 255, 0.1);
+  border: 1px solid rgba(72, 209, 255, 0.3);
+  border-radius: 4px;
+  padding: 2px 8px;
+  flex: none;
+  min-width: 92px;
+  text-align: center;
+}
+
+.help-action {
+  font-size: 13px;
+  color: #d9e5d1;
+}
+
+.help-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.help-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 6px 8px;
+  border-radius: 6px;
+  background: rgba(217, 229, 209, 0.04);
+}
+
+/* A real color swatch (each entry's own actual in-game color, passed as an
+   inline style — see HELP_THREATS/HELP_PICKUPS in HUD.tsx), not a generic
+   bullet: connects "that thing I saw in the fight" straight to its name. */
+.help-dot {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  flex: none;
+  box-shadow: 0 0 8px currentColor;
+}
+
+.help-text {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+}
+
+.help-label {
+  font-size: 13px;
+  color: #d9e5d1;
+  font-weight: bold;
+}
+
+.help-desc {
   font-size: 12px;
   color: #7f8f76;
 }

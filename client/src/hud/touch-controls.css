@@ -8,6 +8,14 @@
      a thumb's resting position. */
   padding: max(18px, env(safe-area-inset-top)) max(24px, env(safe-area-inset-right))
     max(18px, env(safe-area-inset-bottom)) max(24px, env(safe-area-inset-left));
+  /* Below .hud (see hud.css) — this container's own pointer-events:none
+     already means a click anywhere NOT covered by one of its own buttons
+     falls straight through to whatever's stacked below regardless of
+     z-index, so normal touch-control use elsewhere on screen is
+     unaffected; this only matters for the pixels a HUD modal's opaque
+     backdrop (.hud-overlay, pointer-events:all, full-screen) now correctly
+     wins outright instead of losing to a same-DOM-order paint order. */
+  z-index: 10;
 }
 
 .touch-joystick-base,

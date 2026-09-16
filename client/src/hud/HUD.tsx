@@ -1,8 +1,54 @@
 import { useEffect, useState } from "react";
 import { ACHIEVEMENTS, useGameStore } from "../state/gameStore";
-import { FLANKER, SHIP } from "../config/constants";
+import { COLORS, FLANKER, SHIP } from "../config/constants";
 import { isMuted, setMuted } from "../audio/sound";
 import "./hud.css";
+
+// One row of the help panel's "threats" section: a color dot (matching the
+// actual in-game color, not a generic bullet) plus a label/description pair
+// — same shape as ACHIEVEMENTS, so a returning player can connect "that
+// thing I saw in the fight" to its real name and color at a glance.
+interface HelpEntry {
+  color: string;
+  label: string;
+  desc: string;
+}
+
+const HELP_CONTROLS: { key: string; action: string }[] = [
+  { key: "WASD / חצים", action: "תנועה" },
+  { key: "Z / C", action: "קדימה / אחורה (עומק אמיתי)" },
+  { key: "רווח / קליק שמאלי", action: "ירי" },
+  { key: "G", action: "רימון (נשק שטח)" },
+  { key: "3", action: "משקפי תלת-ממד אדום-כחול" },
+  { key: "Esc", action: "השהיה" },
+];
+
+const HELP_THREATS: HelpEntry[] = [
+  { color: COLORS.amber, label: "אויב רגיל", desc: "פגיעה אחת מספיקה" },
+  { color: COLORS.enemyHeavyAccent, label: "אויב כבד", desc: "כחול, גדול יותר — דורש 2 פגיעות" },
+  { color: COLORS.accent, label: "צלילה (Diver)", desc: "עוזב את הפורמציה וצולל ישר לעברכם" },
+  {
+    color: COLORS.enemyBolt,
+    label: "הקפה (Flanker)",
+    desc: "מקיף מרחוק, כמעט תמיד מחוץ לשדה הראייה — עקבו במכ\"ם בפינה הימנית-תחתונה",
+  },
+  {
+    color: COLORS.weakPoint,
+    label: "בוס (כל גל 5)",
+    desc: "יש לו נקודת תורפה מסתובבת — פגיעה מהזווית הלא נכונה לא עושה נזק בכלל",
+  },
+  {
+    color: COLORS.anomalyRing,
+    label: "אנומליית כבידה",
+    desc: "חור שחור זמני שמושך כדורים וספינה כאחד, ובולע כל מה שמתקרב מדי",
+  },
+];
+
+const HELP_PICKUPS: HelpEntry[] = [
+  { color: COLORS.pickupHealth, label: "בריאות", desc: "משחזר כוח" },
+  { color: COLORS.pickupWeapon, label: "שדרוג נשק", desc: "פיזור משולש או אש מהירה, לזמן מוגבל" },
+  { color: COLORS.pickupBomb, label: "פצצת נובה", desc: "נדיר מאוד — משמיד מיידית כל מה שעל המסך" },
+];
 
 // Widget's own pixel radius (must match the CSS width/2) — used to scale a
 // blip's world-space offset into the widget's screen space.
@@ -100,6 +146,7 @@ export function HUD({
   // needs to survive a reset or be read from anywhere else, unlike
   // `paused` (which Scene's own simulation reads every frame).
   const [showAchievements, setShowAchievements] = useState(false);
+  const [showHelp, setShowHelp] = useState(false);
 
   // Real wall-clock elapsed time (not the simulation's own clock — see the
   // note on runStartedAt in gameStore) — ticks every second on its own,
@@ -231,6 +278,20 @@ export function HUD({
           <button
             className="anaglyph-toggle"
             onClick={() => {
+              // Same pause-while-open reasoning as the achievements button
+              // below, and mutually exclusive with it — opening one closes
+              // the other rather than letting both overlays stack.
+              if (!showHelp && status === "playing") useGameStore.getState().pause();
+              setShowHelp((v) => !v);
+              setShowAchievements(false);
+            }}
+            data-active={showHelp}
+          >
+            {compact ? "❓" : "❓ עזרה"}
+          </button>
+          <button
+            className="anaglyph-toggle"
+            onClick={() => {
               // Opening it while actually playing pauses the run — same
               // reasoning as auto-pause-on-blur: reading a panel that
               // covers the action while enemies keep advancing/firing
@@ -239,6 +300,7 @@ export function HUD({
               // auto-pause itself never does (see useAutoPause.ts).
               if (!showAchievements && status === "playing") useGameStore.getState().pause();
               setShowAchievements((v) => !v);
+              setShowHelp(false);
             }}
             data-active={showAchievements}
           >
@@ -294,15 +356,77 @@ export function HUD({
         </div>
       )}
 
-      {/* Hidden while the achievements panel is open — that panel is the
-          only reason this pause happened (see the toggle button above),
-          and its own close button resumes the run itself; showing both
-          overlays at once would stack two competing "resume" controls. */}
-      {paused && status === "playing" && !showAchievements && (
+      {/* Hidden while the achievements or help panel is open — either one
+          is the only reason this pause happened (see their own toggle
+          buttons above), and each has its own close button that resumes
+          the run itself; showing both overlays at once would stack two
+          competing "resume" controls. */}
+      {paused && status === "playing" && !showAchievements && !showHelp && (
         <div className="hud-overlay">
           <div className="hud-panel">
             <h1>מושהה</h1>
             <button onClick={togglePause}>המשך</button>
+          </div>
+        </div>
+      )}
+
+      {showHelp && (
+        <div className="hud-overlay">
+          <div className="hud-panel hud-panel--help">
+            <h1>עזרה</h1>
+            <div className="help-body">
+              <div className="help-section">
+                <div className="help-section-title">בקרות</div>
+                <div className="help-controls-grid">
+                  {HELP_CONTROLS.map((c) => (
+                    <div className="help-controls-row" key={c.key}>
+                      <span className="help-key" dir="ltr">
+                        {c.key}
+                      </span>
+                      <span className="help-action">{c.action}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+              <div className="help-section">
+                <div className="help-section-title">איומים</div>
+                <ul className="help-list">
+                  {HELP_THREATS.map((t) => (
+                    <li className="help-row" key={t.label}>
+                      <span className="help-dot" style={{ background: t.color, color: t.color }} />
+                      <span className="help-text">
+                        <span className="help-label">{t.label}</span>
+                        <span className="help-desc">{t.desc}</span>
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+              <div className="help-section">
+                <div className="help-section-title">פריטים</div>
+                <ul className="help-list">
+                  {HELP_PICKUPS.map((p) => (
+                    <li className="help-row" key={p.label}>
+                      <span className="help-dot" style={{ background: p.color, color: p.color }} />
+                      <span className="help-text">
+                        <span className="help-label">{p.label}</span>
+                        <span className="help-desc">{p.desc}</span>
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            </div>
+            <button
+              onClick={() => {
+                setShowHelp(false);
+                // Same "explicit close resumes right away" reasoning as
+                // the achievements panel's own close button.
+                useGameStore.getState().resume();
+              }}
+            >
+              סגור
+            </button>
           </div>
         </div>
       )}
