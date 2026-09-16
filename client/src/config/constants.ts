@@ -95,6 +95,17 @@ export const COLORS = {
   // dark-metal shell — see Grenade.tsx — reads as a different kind of
   // object well before the color alone has to carry that distinction).
   grenade: "#ffa726",
+  // The boss's rotating weak point (see WEAKPOINT below) — a cool
+  // mint-cyan that doesn't already belong to anything else in the palette
+  // (every existing accent is warm: magenta-red enemies, amber/orange
+  // fire, gold nova, violet weapon pickup, orange grenade). Needs to read
+  // instantly as "this is the one spot that matters right now" against a
+  // boss that's otherwise entirely warm-toned.
+  weakPoint: "#8cffea",
+  // A hit that lands on the boss from the WRONG angle while weak-point
+  // gating is active — deliberately dull and neutral (not a "damage"
+  // color at all) so it reads as "that did nothing," not as a smaller hit.
+  deflect: "#9aa5b1",
 } as const;
 
 // Arena bounds the player ship can move within (world units). Must cover the
@@ -234,6 +245,32 @@ export const GRENADE = {
   // A handful in flight at once is generous given the long cooldown —
   // never more than one or two are ever actually active.
   poolSize: 4,
+};
+
+// A rotating "flank" weak point on the boss (see WeakPoint.tsx + the
+// weak-point block in Scene.tsx's own useFrame) — the first mechanic where
+// the ship's actual 3D position, not just aim, decides whether a hit lands.
+// Rides the boss's own existing cosmetic yaw (boss.rotation.y, previously
+// pure flavor) rather than a second independent rotation accumulator, so
+// there's one single source of truth for "which way is the boss's flank
+// currently facing." Ordinary bolts and the grenade both respect it (a
+// miss-angled hit deflects for 0 damage, with its own visual/audio
+// feedback — see deflectBossHit); the nova bomb deliberately bypasses it,
+// since that's a rare screen-clearing pickup, not a skill-gated attack.
+export const WEAKPOINT = {
+  // Half-angle of the vulnerable window, in radians — PI/3 (60°) gives a
+  // 120°-wide arc. Generous on purpose: this is meant to reward genuinely
+  // repositioning around the boss over the course of a fight, not demand
+  // pixel-perfect angles every single shot.
+  arcHalfAngle: Math.PI / 3,
+  // LOCAL units (pre-scale), similar order of magnitude to the boss's own
+  // ring geometry (radius 1.35) so the marker orbits just outside it.
+  // Scene multiplies this by the boss's own current scale.x every frame
+  // (which already bakes in BOSS.visualScale plus the entrance/telegraph/
+  // hit-flash pulses), so the marker's real-world orbit stays visually
+  // attached to the hull at any pulse size instead of a fixed world radius
+  // drifting inside or outside it during a swell.
+  visualRadius: 1.6,
 };
 
 // Score combo: killing enemies without a gap longer than windowMs keeps

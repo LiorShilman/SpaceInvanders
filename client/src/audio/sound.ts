@@ -140,6 +140,13 @@ export const sound = {
     noiseBurst(0.15, { volume: 0.16, filterFreq: 2200 });
     tone(500, 80, 0.15, { type: "square", volume: 0.09 });
   },
+  // A hit that reached the boss's weak point from the wrong angle (see
+  // WEAKPOINT in config/constants.ts) — deliberately flat and metallic,
+  // with no low-end punch at all, so it reads as "that bounced off," not
+  // as a smaller version of enemyHit's real impact.
+  bossDeflect() {
+    tone(2200, 1800, 0.06, { type: "triangle", volume: 0.06 });
+  },
   shieldHit() {
     tone(220, 150, 0.08, { type: "triangle", volume: 0.1 });
   },

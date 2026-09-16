@@ -199,6 +199,11 @@ interface GameState {
   bossActive: boolean;
   bossHealth: number;
   bossMaxHealth: number;
+  // Is the ship currently inside the boss's rotating weak-point arc (see
+  // WEAKPOINT in config/constants.ts)? Edge-detected mirror of Scene's own
+  // bossWeakAligned ref — HUD.tsx's own "פגיע!/מוגן" label, nothing else
+  // reads this, same store-vs-ref split as bossHealth above.
+  bossWeak: boolean;
 
   // Ship-relative position of every currently-active Flanker (see FLANKER
   // in config/constants.ts), refreshed by Scene at a throttled ~12Hz
@@ -241,6 +246,7 @@ interface GameState {
   // case specifically, this is the general setter Scene uses for both.
   setBoss: (active: boolean, health: number, maxHealth: number) => void;
   damageBoss: (amount: number) => void;
+  setBossWeak: (weak: boolean) => void;
   /** The boss's health just reached 0 — awards its score in one flat shot
    * (deliberately NOT routed through registerKill's combo multiplier, which
    * doesn't fit a single one-off reward) and clears bossActive. */
@@ -280,6 +286,7 @@ const initial = {
   bossActive: false,
   bossHealth: 0,
   bossMaxHealth: 0,
+  bossWeak: false,
   radarBlips: [] as RadarBlip[],
 };
 
@@ -425,6 +432,7 @@ export const useGameStore = create<GameState>((set, get) => ({
 
   setBoss: (active, health, maxHealth) => set({ bossActive: active, bossHealth: health, bossMaxHealth: maxHealth }),
   damageBoss: (amount) => set((s) => ({ bossHealth: Math.max(0, s.bossHealth - amount) })),
+  setBossWeak: (weak) => set({ bossWeak: weak }),
   // Bumps the wave counter itself (taking over advanceWave's usual job for
   // this one transition) rather than also calling advanceWave — that would
   // set ITS OWN banner text right after this one, silently discarding the

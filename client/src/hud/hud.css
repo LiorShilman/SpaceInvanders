@@ -338,6 +338,36 @@
   transition: width 0.15s ease-out;
 }
 
+/* Weak-point status (see WEAKPOINT in config/constants.ts + WeakPoint.tsx)
+   — dim/neutral while shielded, flips to the marker's own mint-cyan and
+   pulses the instant the ship is positioned in its vulnerable arc. Kept
+   deliberately far from the health bar's own red/orange palette so the two
+   states are never confusable at a glance. */
+.boss-weak-pill {
+  font-family: "Consolas", monospace;
+  font-size: 12px;
+  font-weight: bold;
+  letter-spacing: 0.04em;
+  color: #6b7280;
+  transition: color 0.15s ease;
+}
+
+.boss-weak-pill[data-weak="true"] {
+  color: #8cffea;
+  text-shadow: 0 0 10px rgba(140, 255, 234, 0.8);
+  animation: weak-pill-pulse 0.7s ease-in-out infinite;
+}
+
+@keyframes weak-pill-pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.55;
+  }
+}
+
 .wave-banner {
   position: absolute;
   top: 90px;

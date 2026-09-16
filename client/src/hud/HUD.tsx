@@ -78,6 +78,7 @@ export function HUD({
     bossActive,
     bossHealth,
     bossMaxHealth,
+    bossWeak,
     reset,
     clearBanner,
     clearAchievementToast,
@@ -271,6 +272,13 @@ export function HUD({
           <div className="boss-bar-track">
             <div className="boss-bar-fill" style={{ width: `${bossHealthPct}%` }} />
           </div>
+          {/* Textual backup for the 3D weak-point marker itself (see
+              WeakPoint.tsx) — the marker is the primary signal, but a
+              glance at this pill confirms it without hunting for a small
+              orbiting object on a busy screen. */}
+          <span className="boss-weak-pill" data-weak={bossWeak}>
+            {bossWeak ? "פגיע!" : "מוגן"}
+          </span>
         </div>
       )}
 

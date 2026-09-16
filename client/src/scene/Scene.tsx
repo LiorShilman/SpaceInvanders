@@ -18,6 +18,7 @@ import {
   WAVE_ENTRANCE_DURATION,
   WAVE_SCALING,
   WEAPON,
+  WEAKPOINT,
 } from "../config/constants";
 import { useGameStore, type WeaponKind } from "../state/gameStore";
 import { sound } from "../audio/sound";
@@ -34,6 +35,7 @@ import { Starfield } from "./Starfield";
 import { Nebula } from "./Nebula";
 import { Explosions, useExplosions } from "./Explosions";
 import { AimLine, LockReticle, AIM_LINE_LENGTH } from "./Sight";
+import { WeakPoint } from "./WeakPoint";
 
 // How close (in x/y only, ignoring depth) an enemy needs to be to the ship's
 // current firing lane before the lock reticle latches onto it. Must be <=
@@ -173,6 +175,20 @@ function setShipAccentColor(ship: THREE.Group, hex: string) {
     } else if (obj instanceof THREE.PointLight) {
       obj.color.set(hex);
     }
+  });
+}
+
+/**
+ * Toggles WeakPoint.tsx's "aligned" halo — this runs every frame during a
+ * boss fight (unlike setShipAccentColor above, which only fires on state
+ * changes), so it's kept to a cheap visibility flip plus a scale write
+ * rather than touching any material.
+ */
+function setWeakPointAligned(marker: THREE.Group, aligned: boolean, pulseT: number) {
+  marker.traverse((obj) => {
+    if (!obj.userData.weakAligned) return;
+    obj.visible = aligned;
+    if (aligned) obj.scale.setScalar(1 + Math.sin(pulseT * 10) * 0.15);
   });
 }
 
@@ -412,6 +428,22 @@ export function Scene() {
   // already has, which chipping away at one big health pool otherwise
   // lacks entirely. Simtime-based, like bossNextFireAt — 0 means inactive.
   const bossHitFlashUntil = useRef(0);
+
+  // The boss's rotating flank (see WEAKPOINT in config/constants.ts).
+  // weakPointRef is the standalone marker's own transform (positioned each
+  // frame alongside the boss's own movement below); bossWeakAligned is
+  // this frame's answer to "is the ship currently inside the vulnerable
+  // arc" — computed once per frame in the boss block and read later the
+  // same frame by every place that applies player damage to the boss
+  // (ordinary bolts, the grenade), so they never compute it independently
+  // or risk drifting out of sync with each other.
+  const weakPointRef = useRef<THREE.Group>(null);
+  const bossWeakAligned = useRef(false);
+  // Edge-detected mirror into the store (see setBossWeak) — only written
+  // on an actual flip, not every frame, so a boss fight doesn't re-render
+  // the whole HUD 60x/sec for a value that's usually unchanged frame to
+  // frame (same reasoning radarBlips' own throttling comment gives).
+  const bossWeakAlignedStored = useRef(false);
 
   // Camera shake: a decaying "trauma" scalar (0..1, see addShake) rather
   // than a one-shot animation — several hits landing close together should
@@ -683,11 +715,19 @@ export function Scene() {
         bossRef.current.rotation.set(0, 0, 0);
         bossRef.current.position.set(0, (ARENA.minY + ARENA.maxY) / 2, FORMATION.startZ);
       }
+      if (weakPointRef.current) weakPointRef.current.visible = true;
+      bossWeakAligned.current = false;
+      bossWeakAlignedStored.current = false;
       useGameStore.getState().setBoss(true, maxHealth, maxHealth);
+      useGameStore.getState().setBossWeak(false);
     } else {
       bossActive.current = false;
       if (bossRef.current) bossRef.current.visible = false;
+      if (weakPointRef.current) weakPointRef.current.visible = false;
+      bossWeakAligned.current = false;
+      bossWeakAlignedStored.current = false;
       useGameStore.getState().setBoss(false, 0, 0);
+      useGameStore.getState().setBossWeak(false);
     }
   }
 
@@ -905,6 +945,10 @@ export function Scene() {
     explosions.trigger(boss.position.clone(), COLORS.accent);
     boss.visible = false;
     bossActive.current = false;
+    if (weakPointRef.current) weakPointRef.current.visible = false;
+    bossWeakAligned.current = false;
+    bossWeakAlignedStored.current = false;
+    useGameStore.getState().setBossWeak(false);
     useGameStore.getState().defeatBoss(BOSS.killScore);
     useGameStore.getState().unlockAchievement("first_boss");
     spawnWave(formation, useGameStore.getState().wave);
@@ -914,6 +958,19 @@ export function Scene() {
     // hitstopUntil's own comment for why this is reserved for exactly this
     // event and nothing more frequent.
     hitstopUntil.current = Date.now() + 450;
+  }
+
+  /**
+   * A hit that reached the boss from the wrong angle while WEAKPOINT gating
+   * is active (see bossWeakAligned) — the shot/blast still connects (the
+   * bolt is consumed, the grenade still detonates), but does 0 damage.
+   * Deliberately its own distinct, dull feedback (COLORS.deflect, a flat
+   * "clink" rather than enemyHit's punchier impact sound) so it reads as
+   * "that did nothing, wrong angle" rather than a smaller hit or a bug.
+   */
+  function deflectBossHit(position: THREE.Vector3) {
+    explosions.trigger(position, COLORS.deflect);
+    sound.bossDeflect();
   }
 
   /**
@@ -998,10 +1055,17 @@ export function Scene() {
       const dy = center.y - bossRef.current.position.y;
       const dz = center.z - bossRef.current.position.z;
       if (dx * dx + dy * dy + dz * dz <= GRENADE.blastRadius ** 2) {
-        bossHealth.current = Math.max(0, bossHealth.current - GRENADE.bossDamage);
-        useGameStore.getState().damageBoss(GRENADE.bossDamage);
-        bossHitFlashUntil.current = simTime.current + 0.15;
-        if (bossHealth.current <= 0) defeatBossNow(formation);
+        // Same weak-point gating as an ordinary bolt (see its own comment
+        // above) — the blast still happens, but only damages the boss
+        // itself while the ship is positioned in its vulnerable arc.
+        if (!bossWeakAligned.current) {
+          deflectBossHit(bossRef.current.position.clone());
+        } else {
+          bossHealth.current = Math.max(0, bossHealth.current - GRENADE.bossDamage);
+          useGameStore.getState().damageBoss(GRENADE.bossDamage);
+          bossHitFlashUntil.current = simTime.current + 0.15;
+          if (bossHealth.current <= 0) defeatBossNow(formation);
+        }
       }
     }
   }
@@ -1092,6 +1156,8 @@ export function Scene() {
           grenadeLaunchZArr: grenadeLaunchZ.current,
           grenadeCooldownRef: grenadeCooldown,
           detonateGrenadeDebug: (center: THREE.Vector3) => detonateGrenade(formation, center),
+          weakPointRef: weakPointRef.current,
+          bossWeakAlignedRef: bossWeakAligned,
         };
       }
 
@@ -1507,8 +1573,12 @@ export function Scene() {
           bossSweepDir.current = 1;
         }
         boss.position.z = Math.min(boss.position.z + variant.advanceSpeed * delta, BOSS.frontLineZ);
-        // A small bob and a slow yaw — purely cosmetic, keeps what would
-        // otherwise read as a flat sprite gliding on rails feeling alive.
+        // A small bob and a slow yaw. The yaw used to be purely cosmetic
+        // (kept what would otherwise read as a flat sprite gliding on
+        // rails feeling alive) — it's now also what the weak point marker
+        // rides (see below), reusing this one rotation as the single
+        // source of truth for "which way is the boss's flank facing"
+        // rather than adding a second, disconnected accumulator.
         boss.rotation.y += delta * 0.15;
         boss.position.y = (ARENA.minY + ARENA.maxY) / 2 + Math.sin(simTime.current * 0.8) * 0.6;
 
@@ -1549,6 +1619,34 @@ export function Scene() {
         }
 
         boss.scale.setScalar(BOSS.visualScale * scaleMultiplier);
+
+        // --- weak point: orbits with the boss's own yaw, and gates whether
+        // player damage actually lands (see WEAKPOINT in constants.ts and
+        // deflectBossHit above). Computed once here, read later this same
+        // frame by every place that applies player damage to the boss.
+        const weakDirX = Math.sin(boss.rotation.y);
+        const weakDirZ = Math.cos(boss.rotation.y);
+        if (weakPointRef.current) {
+          const radius = WEAKPOINT.visualRadius * boss.scale.x;
+          weakPointRef.current.position.set(
+            boss.position.x + weakDirX * radius,
+            boss.position.y,
+            boss.position.z + weakDirZ * radius,
+          );
+        }
+        const wpDx = ship.position.x - boss.position.x;
+        const wpDz = ship.position.z - boss.position.z;
+        const wpDist = Math.hypot(wpDx, wpDz);
+        bossWeakAligned.current =
+          wpDist > 0.01 &&
+          (wpDx * weakDirX + wpDz * weakDirZ) / wpDist >= Math.cos(WEAKPOINT.arcHalfAngle);
+        if (weakPointRef.current) setWeakPointAligned(weakPointRef.current, bossWeakAligned.current, simTime.current);
+        // Store mirror only on an actual flip — see bossWeakAlignedStored's
+        // own comment for why (avoids re-rendering the whole HUD 60x/sec).
+        if (bossWeakAligned.current !== bossWeakAlignedStored.current) {
+          bossWeakAlignedStored.current = bossWeakAligned.current;
+          useGameStore.getState().setBossWeak(bossWeakAligned.current);
+        }
 
         if (simTime.current >= bossNextFireAt.current) {
           bossNextFireAt.current =
@@ -1853,6 +1951,15 @@ export function Scene() {
           if (dx * dx + dy * dy + dz * dz <= BOSS.hitRadius ** 2) {
             playerBolts.current.active[i] = false;
             mesh.visible = false;
+            // The weak point (see WEAKPOINT in constants.ts): a bolt
+            // landing while the ship isn't in the vulnerable arc still
+            // connects visually/physically, but deals no damage — the
+            // whole point of the mechanic is that positioning, not aim,
+            // decides whether this hit counts.
+            if (!bossWeakAligned.current) {
+              deflectBossHit(mesh.position.clone());
+              continue;
+            }
             // One hit = one point of boss health, same "every hit counts
             // the same" rule as a regular enemy's own one-shot death — the
             // boss is just a much bigger health pool, not tougher per hit.
@@ -2152,6 +2259,7 @@ export function Scene() {
           formation's sway/advance. Hidden by default; spawnWave shows it
           only during a boss wave (see BOSS in config/constants.ts). */}
       <Boss ref={bossRef} variant={bossVariantVisual} />
+      <WeakPoint ref={weakPointRef} />
 
       {playerBolts.current.refs.map((ref, i) => (
         <Projectile key={`p${i}`} ref={ref as React.RefObject<THREE.Mesh>} color={COLORS.phosphor} />
