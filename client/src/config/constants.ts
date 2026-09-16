@@ -106,6 +106,13 @@ export const COLORS = {
   // gating is active — deliberately dull and neutral (not a "damage"
   // color at all) so it reads as "that did nothing," not as a smaller hit.
   deflect: "#9aa5b1",
+  // The gravity anomaly (see ANOMALY below) — a near-black violet core
+  // (genuinely reads as "a hole," not just another dark enemy hull) with
+  // a hot magenta-purple accretion ring. Distinct from the weapon
+  // pickup's own pale lavender (#c77dff): more saturated and cooler
+  // toward magenta, so the two are never confusable even at a glance.
+  anomalyCore: "#0c0518",
+  anomalyRing: "#8b2fe0",
 } as const;
 
 // Arena bounds the player ship can move within (world units). Must cover the
@@ -271,6 +278,56 @@ export const WEAKPOINT = {
   // attached to the hull at any pulse size instead of a fixed world radius
   // drifting inside or outside it during a swell.
   visualRadius: 1.6,
+};
+
+// A temporary gravity well ("anomaly") that appears periodically during
+// normal (non-boss) waves — the second "wow" tie-breaker feature alongside
+// the boss weak point above. Unlike every other hazard in the game, this
+// isn't aimed AT the player: it distorts the whole local battle space,
+// curving every bolt's straight-line path and tugging the ship itself off
+// course, while anything close enough gets consumed outright: a bolt or the
+// ship itself (both gradually PULLED in first, via applyAnomalyPull in
+// Scene.tsx — their positions accumulate frame to frame, so a sustained
+// pull actually means something) or a currently-diving/flanking enemy
+// (reusing DIVE/FLANKER's own detached-world-position pattern — but NOT
+// pulled: dive/flank positions are recomputed fresh from each attack's own
+// formula every single frame with no memory of a previous nudge, so it's
+// consumed purely if its own flight path happens to bring it within
+// enemyCaptureRadius on its own). A REGULAR formation enemy shares the
+// formation's one shared transform and has no independent position to test
+// at all, so it's entirely unaffected. A player who notices in time can
+// still use this tactically: a diving/flanking enemy whose run happens to
+// sweep past the anomaly gets sucked in for a bonus kill.
+export const ANOMALY = {
+  // A global cooldown gate, exactly like DIVE/FLANKER's own — how often
+  // one appears reads the same regardless of wave number.
+  cooldownMin: 22,
+  cooldownMax: 34,
+  graceAfterWaveStart: 6,
+  duration: 9, // seconds it stays active once spawned
+  entranceDuration: 0.6, // grow-in/shrink-out, same easeOutBack beat as a wave/boss entrance
+  // How far its pull reaches — anything further away is completely
+  // unaffected. Anything closer gets pulled harder the closer it already
+  // is (see applyAnomalyPull in Scene.tsx).
+  pullRadius: 9,
+  // Actually touching this close consumes a bolt or the ship outright,
+  // rather than asymptotically approaching the center forever.
+  eventHorizon: 1,
+  shipPullPerSec: 5, // at the pull radius's own edge; scales up closer in
+  boltPullPerSec: 9,
+  // A diving/flanking enemy is never pulled (see the block comment above),
+  // so it needs its own, more generous proximity threshold — otherwise
+  // its own flight path would need to graze the tiny eventHorizon almost
+  // exactly, making the "lure one in" tactic nearly unreachable in
+  // practice.
+  enemyCaptureRadius: 2.5,
+  shipContactDamage: 18,
+  // A diving/flanking enemy that gets sucked in still scores like any
+  // other kill (via applyEnemyHit) plus this on top — a small reward for
+  // deliberately luring one in, without making it so large that luring is
+  // obviously always better than just shooting it.
+  suckedKillBonus: 30,
+  visualScale: 1.5, // final radius of the visible core once fully grown in
 };
 
 // Score combo: killing enemies without a gap longer than windowMs keeps

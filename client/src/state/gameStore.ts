@@ -230,6 +230,10 @@ interface GameState {
    * triggerNovaBomb); this just announces it, same as collectHealth/
    * collectWeapon do for their own pickups. */
   collectNova: () => void;
+  /** A gravity anomaly just spawned (see ANOMALY in config/constants.ts) —
+   * Scene does the actual physics; this just announces it via the same
+   * one-off-banner convention as collectNova/collectHealth/collectWeapon. */
+  announceAnomaly: () => void;
   revertWeapon: () => void;
   // Scene calls this the instant a grenade actually leaves the ship (slot
   // found, cooldown was ready) — sets the display-only readiness timestamp
@@ -393,6 +397,7 @@ export const useGameStore = create<GameState>((set, get) => ({
     }),
 
   collectNova: () => set({ bannerText: "פצצת נובה! 💥 כל האויבים הושמדו" }),
+  announceAnomaly: () => set({ bannerText: "⚠️ אנומליית כבידה!" }),
 
   // Scene calls this once its own timer sees the current weapon's time run
   // out — silent on purpose (no banner), unlike picking one up.

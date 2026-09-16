@@ -198,4 +198,20 @@ export const sound = {
     noiseBurst(0.35, { volume: 0.28, filterFreq: 1000 });
     tone(150, 40, 0.35, { type: "sawtooth", volume: 0.2 });
   },
+  // A gravity anomaly appearing (see ANOMALY in config/constants.ts) — a
+  // slow, ominous downward sweep, deliberately the lowest/longest tone in
+  // the game, so it reads as "something big and different just started,"
+  // not another impact.
+  anomalySpawn() {
+    tone(300, 60, 0.9, { type: "sine", volume: 0.16 });
+    tone(310, 65, 0.9, { type: "sine", volume: 0.1, delay: 0.05 });
+  },
+  // Something (a bolt, a lured enemy, the ship) getting pulled past the
+  // anomaly's event horizon — a quick upward "sucked away" whoosh into
+  // silence, distinct from every other impact sound (none of which sweep
+  // UP), since nothing is actually being destroyed by force here.
+  anomalyConsume() {
+    tone(200, 1400, 0.18, { type: "sine", volume: 0.12 });
+    noiseBurst(0.1, { volume: 0.08, filterFreq: 2500 });
+  },
 };

@@ -2,6 +2,7 @@ import { createRef, useMemo, useRef, useState } from "react";
 import { useFrame, useThree } from "@react-three/fiber";
 import * as THREE from "three";
 import {
+  ANOMALY,
   ARENA,
   BOSS,
   COLORS,
@@ -36,6 +37,7 @@ import { Nebula } from "./Nebula";
 import { Explosions, useExplosions } from "./Explosions";
 import { AimLine, LockReticle, AIM_LINE_LENGTH } from "./Sight";
 import { WeakPoint } from "./WeakPoint";
+import { Anomaly } from "./Anomaly";
 
 // How close (in x/y only, ignoring depth) an enemy needs to be to the ship's
 // current firing lane before the lock reticle latches onto it. Must be <=
@@ -190,6 +192,30 @@ function setWeakPointAligned(marker: THREE.Group, aligned: boolean, pulseT: numb
     obj.visible = aligned;
     if (aligned) obj.scale.setScalar(1 + Math.sin(pulseT * 10) * 0.15);
   });
+}
+
+/**
+ * Nudges `pos` toward the active anomaly's `center` (see ANOMALY in
+ * config/constants.ts) by `pullPerSec` scaled by how close `pos` already
+ * is (stronger nearer the center, zero at/beyond pullRadius) — shared by
+ * player/enemy bolts and any detached (diving/flanking) enemy position,
+ * the only kinds of position this simple system ever needs to curve.
+ * Mutates `pos` in place; returns true the instant it crosses into the
+ * event horizon — the caller decides what "consumed" means for its own
+ * kind (a bolt is destroyed, a detached enemy is killed).
+ */
+function applyAnomalyPull(pos: THREE.Vector3, center: THREE.Vector3, pullPerSec: number, delta: number): boolean {
+  const dx = center.x - pos.x;
+  const dy = center.y - pos.y;
+  const dz = center.z - pos.z;
+  const dist = Math.sqrt(dx * dx + dy * dy + dz * dz);
+  if (dist >= ANOMALY.pullRadius) return false;
+  if (dist <= ANOMALY.eventHorizon) return true;
+  const strength = (1 - dist / ANOMALY.pullRadius) * pullPerSec * delta;
+  pos.x += (dx / dist) * strength;
+  pos.y += (dy / dist) * strength;
+  pos.z += (dz / dist) * strength;
+  return false;
 }
 
 const _shieldDummy = new THREE.Object3D();
@@ -445,6 +471,19 @@ export function Scene() {
   // frame (same reasoning radarBlips' own throttling comment gives).
   const bossWeakAlignedStored = useRef(false);
 
+  // The gravity anomaly (see ANOMALY in config/constants.ts). Its own
+  // position IS anomalyRef.current.position — no separate shadow copy,
+  // same as Boss/Ship (a single object needs no detached-position array).
+  const anomalyRef = useRef<THREE.Group>(null);
+  const anomalyActive = useRef(false);
+  const nextAnomalyAt = useRef(ANOMALY.graceAfterWaveStart);
+  const anomalySpawnedAt = useRef(0); // simTime it appeared — drives the entrance grow-in
+  const anomalyUntil = useRef(0); // simTime it despawns at — drives the shrink-out
+  // Contact damage applies once per appearance (then a hard knockback
+  // keeps the ship from sitting inside it), not every frame it happens to
+  // be within the event horizon.
+  const anomalyShipHit = useRef(false);
+
   // Camera shake: a decaying "trauma" scalar (0..1, see addShake) rather
   // than a one-shot animation — several hits landing close together should
   // compound into a bigger shake, not restart a fixed-length effect from
@@ -687,8 +726,15 @@ export function Scene() {
     }
     nextDiveAt.current = DIVE.graceAfterWaveStart + Math.random() * (DIVE.cooldownMax - DIVE.cooldownMin);
     nextFlankAt.current = FLANKER.graceAfterWaveStart + Math.random() * (FLANKER.cooldownMax - FLANKER.cooldownMin);
+    nextAnomalyAt.current = ANOMALY.graceAfterWaveStart + Math.random() * (ANOMALY.cooldownMax - ANOMALY.cooldownMin);
 
     if (isBossWave) {
+      // The anomaly is a normal-wave-only hazard (see ANOMALY's own
+      // comment) — piling its pull on top of the weak-point mechanic and
+      // the boss's own barrage would be overwhelming, not "more wow." Any
+      // instance still running from the previous wave ends immediately.
+      if (anomalyRef.current) anomalyRef.current.visible = false;
+      anomalyActive.current = false;
       // Health grows on every repeat encounter (wave 10, 15, ...), same
       // escalating-difficulty spirit as WAVE_SCALING for the ordinary
       // formation — encounterNumber is 1 the first time (wave 5), 2 the
@@ -869,7 +915,7 @@ export function Scene() {
   function applyEnemyHit(
     formation: THREE.Group,
     e: number,
-    options?: { forceLethal?: boolean; noDrop?: boolean },
+    options?: { forceLethal?: boolean; noDrop?: boolean; extraBonus?: number },
   ) {
     const dive = diveWorldPos.current[e];
     const flank = flankWorldPos.current[e];
@@ -919,7 +965,10 @@ export function Scene() {
     }
 
     const bonus =
-      (wasDiving ? DIVE.killBonus : 0) + (wasFlanking ? FLANKER.killBonus : 0) + (wasHeavy ? ENEMY_VARIANTS.heavy.killBonus : 0);
+      (wasDiving ? DIVE.killBonus : 0) +
+      (wasFlanking ? FLANKER.killBonus : 0) +
+      (wasHeavy ? ENEMY_VARIANTS.heavy.killBonus : 0) +
+      (options?.extraBonus ?? 0);
     useGameStore.getState().registerKill(bonus);
     useGameStore.getState().unlockAchievement("first_kill");
     if (wasHeavy) useGameStore.getState().unlockAchievement("first_heavy");
@@ -1158,6 +1207,13 @@ export function Scene() {
           detonateGrenadeDebug: (center: THREE.Vector3) => detonateGrenade(formation, center),
           weakPointRef: weakPointRef.current,
           bossWeakAlignedRef: bossWeakAligned,
+          anomalyRef: anomalyRef.current,
+          anomalyActiveRef: anomalyActive,
+          nextAnomalyAtRef: nextAnomalyAt,
+          anomalyUntilRef: anomalyUntil,
+          forceSpawnAnomalyDebug: () => {
+            nextAnomalyAt.current = simTime.current;
+          },
         };
       }
 
@@ -1181,6 +1237,49 @@ export function Scene() {
       // A slight forward pitch when diving in, back pitch when pulling out —
       // one more piece of "this is a real cockpit," not a flat plane sled.
       ship.rotation.x = THREE.MathUtils.lerp(ship.rotation.x, move.z * 0.2, 0.15);
+
+      // --- gravity anomaly: pulls the ship off course while active (see
+      // ANOMALY in config/constants.ts) — a real force to fight with
+      // movement, not just a visual. Contact within its event horizon
+      // costs a flat chunk of health once per appearance (anomalyShipHit)
+      // plus a hard push straight back out, rather than repeatedly
+      // damaging every frame the ship happens to sit inside it.
+      if (anomalyActive.current && anomalyRef.current) {
+        const center = anomalyRef.current.position;
+        const adx = center.x - ship.position.x;
+        const ady = center.y - ship.position.y;
+        const adz = center.z - ship.position.z;
+        const adist = Math.sqrt(adx * adx + ady * ady + adz * adz);
+        if (adist < ANOMALY.pullRadius) {
+          if (adist <= ANOMALY.eventHorizon) {
+            if (!anomalyShipHit.current) {
+              anomalyShipHit.current = true;
+              useGameStore.getState().damageShip(ANOMALY.shipContactDamage);
+              sound.anomalyConsume();
+              addShake(0.5);
+            }
+            // Direction is undefined at (or extremely near) dead center —
+            // fall back to a fixed push-back direction rather than
+            // dividing by ~0, which would otherwise send the ship flying
+            // to infinity for one frame.
+            const pushDist = ANOMALY.eventHorizon + 1.5;
+            const dirX = adist > 0.0001 ? adx / adist : 0;
+            const dirY = adist > 0.0001 ? ady / adist : 0;
+            const dirZ = adist > 0.0001 ? adz / adist : 1;
+            ship.position.x = center.x - dirX * pushDist;
+            ship.position.y = center.y - dirY * pushDist;
+            ship.position.z = center.z - dirZ * pushDist;
+          } else {
+            const strength = (1 - adist / ANOMALY.pullRadius) * ANOMALY.shipPullPerSec * delta;
+            ship.position.x += (adx / adist) * strength;
+            ship.position.y += (ady / adist) * strength;
+            ship.position.z += (adz / adist) * strength;
+          }
+          ship.position.x = THREE.MathUtils.clamp(ship.position.x, -ARENA.halfWidth, ARENA.halfWidth);
+          ship.position.y = THREE.MathUtils.clamp(ship.position.y, ARENA.minY, ARENA.maxY);
+          ship.position.z = THREE.MathUtils.clamp(ship.position.z, ARENA.minZ, ARENA.maxZ);
+        }
+      }
 
       // --- weapon expiry: a timed pickup reverts to the base weapon once
       // its clock runs out. Silent by design (see revertWeapon).
@@ -1288,6 +1387,55 @@ export function Scene() {
         formation.scale.setScalar(easeOutBack(entranceT));
       } else {
         formation.scale.setScalar(1);
+      }
+
+      // --- gravity anomaly: spawn on cooldown, animate its lifecycle ----------
+      // See ANOMALY's own comment in config/constants.ts for the overall
+      // design — a normal-wave-only hazard, gated off entirely during a
+      // boss wave (see the isBossWave branch in spawnWave, which
+      // force-ends any instance still running and never lets a new one
+      // begin while bossActive stays true).
+      if (
+        !anomalyActive.current &&
+        !bossActive.current &&
+        aliveCount.current > 0 &&
+        simTime.current >= nextAnomalyAt.current
+      ) {
+        anomalyActive.current = true;
+        anomalySpawnedAt.current = simTime.current;
+        anomalyUntil.current = simTime.current + ANOMALY.duration;
+        anomalyShipHit.current = false;
+        if (anomalyRef.current) {
+          anomalyRef.current.visible = true;
+          anomalyRef.current.position.set(
+            (Math.random() * 2 - 1) * ARENA.halfWidth * 0.7,
+            THREE.MathUtils.lerp(ARENA.minY + 1, ARENA.maxY - 1, Math.random()),
+            THREE.MathUtils.lerp(-14, 6, Math.random()),
+          );
+        }
+        sound.anomalySpawn();
+        useGameStore.getState().announceAnomaly();
+      } else if (anomalyActive.current) {
+        if (simTime.current >= anomalyUntil.current) {
+          anomalyActive.current = false;
+          if (anomalyRef.current) anomalyRef.current.visible = false;
+          nextAnomalyAt.current =
+            simTime.current + ANOMALY.cooldownMin + Math.random() * (ANOMALY.cooldownMax - ANOMALY.cooldownMin);
+        } else if (anomalyRef.current) {
+          // Grow in, hold, shrink out — the same easeOutBack "arrival" beat
+          // a wave/boss entrance uses, mirrored on the way out too since
+          // this hazard actually needs to visibly leave rather than just
+          // vanishing outright.
+          const sinceSpawn = simTime.current - anomalySpawnedAt.current;
+          const untilDespawn = anomalyUntil.current - simTime.current;
+          let entranceMul = 1;
+          if (sinceSpawn < ANOMALY.entranceDuration) {
+            entranceMul = easeOutBack(THREE.MathUtils.clamp(sinceSpawn / ANOMALY.entranceDuration, 0, 1));
+          } else if (untilDespawn < ANOMALY.entranceDuration) {
+            entranceMul = THREE.MathUtils.clamp(untilDespawn / ANOMALY.entranceDuration, 0, 1);
+          }
+          anomalyRef.current.scale.setScalar(ANOMALY.visualScale * Math.max(0.01, entranceMul));
+        }
       }
 
       // --- enemy diving/flanking: launch a new one on cooldown ---------------
@@ -1533,6 +1681,38 @@ export function Scene() {
           flank.fired = true;
           spawn(enemyBolts.current, pos.clone());
           sound.enemyFire();
+        }
+      }
+
+      // --- gravity anomaly: consumes any diving/flanking enemy whose own
+      // attack run brings it within the event horizon (see ANOMALY's own
+      // comment in constants.ts). Deliberately a proximity check, NOT a
+      // gradual pull like the ship/bolts get above: diveWorldPos/
+      // flankWorldPos are recomputed FRESH every frame straight from each
+      // attack's own start-position/timing formula (see the dive/flank
+      // advance loops above) with no memory of anything nudging them the
+      // previous frame, so mutating them here would just get silently
+      // discarded on the very next frame — there's no persistent velocity
+      // to actually accumulate a pull into. A regular (non-diving/
+      // flanking) formation enemy is skipped for the same reason FLANKER/
+      // DIVE's own consumers skip it: it shares the formation's one
+      // transform and has no independent position to test at all.
+      if (anomalyActive.current && anomalyRef.current) {
+        const center = anomalyRef.current.position;
+        for (let e = 0; e < ENEMY_COUNT; e++) {
+          if (!enemyAlive.current[e]) continue;
+          const detached = diveWorldPos.current[e] ?? flankWorldPos.current[e];
+          if (!detached) continue;
+          const dx = center.x - detached.x;
+          const dy = center.y - detached.y;
+          const dz = center.z - detached.z;
+          if (dx * dx + dy * dy + dz * dz > ANOMALY.enemyCaptureRadius ** 2) continue;
+          const beforeCount = aliveCount.current;
+          sound.anomalyConsume();
+          applyEnemyHit(formation, e, { forceLethal: true, noDrop: true, extraBonus: ANOMALY.suckedKillBonus });
+          // Same cascade guard as triggerNovaBomb/detonateGrenade — see
+          // their own comments for the full reasoning.
+          if (aliveCount.current > beforeCount) break;
         }
       }
 
@@ -1926,6 +2106,20 @@ export function Scene() {
         if (!mesh) continue;
         mesh.position.z += playerBolts.current.dir * playerBolts.current.speed * delta;
 
+        // Gravity anomaly (see ANOMALY in constants.ts): curves the bolt's
+        // straight-line path toward it, and swallows it outright at the
+        // event horizon — one more thing a player has to account for
+        // while it's active, on top of everything already homing in on
+        // the formation.
+        if (anomalyActive.current && anomalyRef.current) {
+          if (applyAnomalyPull(mesh.position, anomalyRef.current.position, ANOMALY.boltPullPerSec, delta)) {
+            playerBolts.current.active[i] = false;
+            mesh.visible = false;
+            sound.anomalyConsume();
+            continue;
+          }
+        }
+
         if (mesh.position.z < FORMATION.startZ - 6) {
           playerBolts.current.active[i] = false;
           mesh.visible = false;
@@ -2116,6 +2310,19 @@ export function Scene() {
         if (!mesh) continue;
         mesh.position.z += enemyBolts.current.dir * enemyBolts.current.speed * delta;
 
+        // Gravity anomaly (see ANOMALY in constants.ts) — same curve/
+        // swallow rule as a player bolt above. Enemy fire getting pulled
+        // off course too (not just the player's own) is what makes this
+        // read as "the space itself is distorted," not a one-sided debuff.
+        if (anomalyActive.current && anomalyRef.current) {
+          if (applyAnomalyPull(mesh.position, anomalyRef.current.position, ANOMALY.boltPullPerSec, delta)) {
+            enemyBolts.current.active[i] = false;
+            mesh.visible = false;
+            sound.anomalyConsume();
+            continue;
+          }
+        }
+
         // Tracks the ship's current z (it now moves fore/aft via Z/C), not
         // the fixed spawn constant — otherwise this cull point drifts out of
         // sync with wherever the ship actually is.
@@ -2260,6 +2467,7 @@ export function Scene() {
           only during a boss wave (see BOSS in config/constants.ts). */}
       <Boss ref={bossRef} variant={bossVariantVisual} />
       <WeakPoint ref={weakPointRef} />
+      <Anomaly ref={anomalyRef} />
 
       {playerBolts.current.refs.map((ref, i) => (
         <Projectile key={`p${i}`} ref={ref as React.RefObject<THREE.Mesh>} color={COLORS.phosphor} />
