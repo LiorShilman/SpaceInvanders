@@ -1,4 +1,4 @@
-import { createRef, useMemo, useRef, useState } from "react";
+import { createRef, useEffect, useMemo, useRef, useState } from "react";
 import { useFrame, useThree } from "@react-three/fiber";
 import * as THREE from "three";
 import {
@@ -38,6 +38,24 @@ import { Explosions, useExplosions } from "./Explosions";
 import { AimLine, LockReticle, AIM_LINE_LENGTH } from "./Sight";
 import { WeakPoint } from "./WeakPoint";
 import { Anomaly } from "./Anomaly";
+import { RemoteShip } from "./RemoteShip";
+import { getOwnSessionId, getRemotePlayers, isCoOpConnected, joinCoOp, reportOwnPosition } from "../net/coop";
+
+// Co-op is an opt-in proof-of-concept (see net/coop.ts + server/src/rooms/
+// co-op-survival.ts for the exact scope) — a URL flag rather than a UI
+// toggle for now, so it can never accidentally activate for a normal
+// single-player visitor. Read once at module load, same convention
+// App.tsx's own IS_TOUCH_DEVICE already uses for "doesn't change
+// mid-session, no reason to recompute every render."
+const IS_COOP_MODE = new URLSearchParams(window.location.search).get("coop") === "1";
+// Dev-only default; a real deployed server address would come from a
+// build-time env var instead (see homelab-deploy's own guidance once this
+// slice is ready to actually go on the internet).
+const COOP_SERVER_URL = import.meta.env.VITE_COOP_SERVER_URL ?? "ws://localhost:2567";
+// Fixed-size pool, same idiom as every other pooled object in this file —
+// matches CoOpSurvivalRoom's own maxClients (4) minus this client's own
+// ship.
+const MAX_REMOTE_SHIPS = 3;
 
 // How close (in x/y only, ignoring depth) an enemy needs to be to the ship's
 // current firing lane before the lock reticle latches onto it. Must be <=
@@ -547,6 +565,14 @@ export function Scene() {
   const playerBolts = useRef<Pool>(makePool(PROJECTILE.poolSize, -1, PROJECTILE.playerSpeed));
   const enemyBolts = useRef<Pool>(makePool(PROJECTILE.poolSize, 1, PROJECTILE.enemySpeed));
   const pickups = useRef<PickupSlot[]>(makePickupPool(PICKUP_POOL_SIZE));
+
+  // Co-op proof-of-concept (see net/coop.ts) — a fixed pool of RemoteShip
+  // refs, same idiom as every other pooled object here, mapped to
+  // whichever sessionIds are currently in getRemotePlayers() each frame
+  // rather than owning any React state of its own.
+  const remoteShipRefs = useRef<React.RefObject<THREE.Group | null>[]>(
+    Array.from({ length: MAX_REMOTE_SHIPS }, () => createRef<THREE.Group>()),
+  );
 
   // The player's own grenade throw (see GRENADE in config/constants.ts) —
   // reuses the same Pool/spawn machinery as the bolt pools above (it's
@@ -1119,6 +1145,19 @@ export function Scene() {
     }
   }
 
+  // Co-op proof-of-concept (see net/coop.ts) — a one-time connect attempt
+  // behind the ?coop=1 flag, not tied to any gameplay state: this slice
+  // just relays position, so there's no "wait for a real run to start"
+  // reason to delay it. Errors are swallowed with a console warning rather
+  // than surfaced to the player — a failed connection should degrade to
+  // "plays exactly like single-player," never block the game.
+  useEffect(() => {
+    if (!IS_COOP_MODE) return;
+    joinCoOp(COOP_SERVER_URL).catch((err) => {
+      console.warn("[coop] failed to connect — continuing single-player", err);
+    });
+  }, []);
+
   useFrame((_state, rawDelta) => {
     const clampedDelta = Math.min(rawDelta, 1 / 30); // clamp to avoid huge steps on tab-switch
     // Hitstop: see hitstopUntil's own comment — crawl to ~4% speed for a
@@ -1206,6 +1245,10 @@ export function Scene() {
           grenadeCooldownRef: grenadeCooldown,
           detonateGrenadeDebug: (center: THREE.Vector3) => detonateGrenade(formation, center),
           weakPointRef: weakPointRef.current,
+          coopRemotePlayers: Array.from(getRemotePlayers().entries()),
+          coopOwnSessionId: getOwnSessionId(),
+          coopConnected: isCoOpConnected(),
+          remoteShipRefsArr: remoteShipRefs.current.map((r) => r.current),
           bossWeakAlignedRef: bossWeakAligned,
           anomalyRef: anomalyRef.current,
           anomalyActiveRef: anomalyActive,
@@ -1278,6 +1321,33 @@ export function Scene() {
           ship.position.x = THREE.MathUtils.clamp(ship.position.x, -ARENA.halfWidth, ARENA.halfWidth);
           ship.position.y = THREE.MathUtils.clamp(ship.position.y, ARENA.minY, ARENA.maxY);
           ship.position.z = THREE.MathUtils.clamp(ship.position.z, ARENA.minZ, ARENA.maxZ);
+        }
+      }
+
+      // --- co-op proof-of-concept: report this ship's final position for
+      // the frame, and mirror every other connected player's last-known
+      // one onto a RemoteShip slot (see net/coop.ts + RemoteShip.tsx).
+      // Skipped entirely outside ?coop=1 — isCoOpConnected() is always
+      // false then, so this is a single cheap check, not a real branch.
+      if (IS_COOP_MODE && isCoOpConnected()) {
+        reportOwnPosition(ship.position.x, ship.position.y, ship.position.z, ship.rotation.z);
+        let slot = 0;
+        for (const remote of getRemotePlayers().values()) {
+          if (slot >= MAX_REMOTE_SHIPS) break;
+          const mesh = remoteShipRefs.current[slot].current;
+          if (mesh) {
+            mesh.visible = true;
+            mesh.position.set(remote.x, remote.y, remote.z);
+            mesh.rotation.z = remote.rotZ;
+          }
+          slot++;
+        }
+        // Any slot beyond however many teammates are actually connected
+        // right now stays hidden — same "unused pool slot" convention as
+        // every other pool in this file.
+        for (; slot < MAX_REMOTE_SHIPS; slot++) {
+          const mesh = remoteShipRefs.current[slot].current;
+          if (mesh) mesh.visible = false;
         }
       }
 
@@ -2450,6 +2520,12 @@ export function Scene() {
       <Starfield />
 
       <Ship ref={shipRef} />
+      {/* Co-op proof-of-concept (see net/coop.ts) — always mounted, hidden
+          by default; only ever shown/positioned when ?coop=1 is active AND
+          a teammate is actually connected (see the per-frame block above). */}
+      {remoteShipRefs.current.map((r, i) => (
+        <RemoteShip key={`remote${i}`} ref={r} />
+      ))}
       <AimLine ref={aimLineRef} />
       <LockReticle ref={lockReticleRef} />
 

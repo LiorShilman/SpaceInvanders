@@ -113,6 +113,13 @@ export const COLORS = {
   // toward magenta, so the two are never confusable even at a glance.
   anomalyCore: "#0c0518",
   anomalyRing: "#8b2fe0",
+  // A teammate's ship in the Co-op proof-of-concept (see net/coop.ts +
+  // RemoteShip.tsx) — warm gold/amber, deliberately nothing like the
+  // ship's own reserved phosphor-green (COLORS.phosphor's own comment)
+  // so "that's me" vs. "that's someone else's ship" is unmistakable even
+  // before anything else on screen tells them apart.
+  allyAccent: "#ffcf4d",
+  allyAccentDim: "#7a5f1d",
 } as const;
 
 // Arena bounds the player ship can move within (world units). Must cover the

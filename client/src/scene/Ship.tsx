@@ -2,6 +2,16 @@ import { forwardRef } from "react";
 import * as THREE from "three";
 import { COLORS } from "../config/constants";
 
+interface ShipProps {
+  // Defaults to the ship's own established phosphor-green identity (see
+  // COLORS.phosphor's own comment: reserved for the ship, nowhere else) —
+  // only overridden by RemoteShip.tsx, so a teammate's ship in the Co-op
+  // proof-of-concept (see net/coop.ts) reads as a distinct pilot at a
+  // glance rather than an identical copy of your own.
+  accentColor?: string;
+  accentColorDim?: string;
+}
+
 /**
  * Visual-only. Position/rotation are driven imperatively by Scene's frame
  * loop via the forwarded group ref — this component never re-renders.
@@ -21,7 +31,10 @@ import { COLORS } from "../config/constants";
  * themselves) so ambient/diffuse light carries the shape reliably, with
  * roughness raised to match — still reads as metal, just not chrome.
  */
-export const Ship = forwardRef<THREE.Group>(function Ship(_props, ref) {
+export const Ship = forwardRef<THREE.Group, ShipProps>(function Ship(
+  { accentColor = COLORS.phosphor, accentColorDim = COLORS.phosphorDim },
+  ref,
+) {
   return (
     <group ref={ref}>
       {/* Fuselage: a tapered hull, nose pointing forward (-Z). */}
@@ -48,8 +61,8 @@ export const Ship = forwardRef<THREE.Group>(function Ship(_props, ref) {
           <mesh position={[side * 1.28, -0.05, -0.3]} userData={{ shipAccent: true }}>
             <boxGeometry args={[0.32, 0.03, 0.14]} />
             <meshStandardMaterial
-              color={COLORS.phosphor}
-              emissive={COLORS.phosphor}
+              color={accentColor}
+              emissive={accentColor}
               emissiveIntensity={1.4}
               toneMapped={false}
             />
@@ -61,8 +74,8 @@ export const Ship = forwardRef<THREE.Group>(function Ship(_props, ref) {
       <mesh position={[0, 0.3, -0.15]} scale={[0.6, 0.48, 0.6]} castShadow userData={{ shipAccent: true }}>
         <sphereGeometry args={[0.32, 10, 8, 0, Math.PI * 2, 0, Math.PI / 1.7]} />
         <meshStandardMaterial
-          color={COLORS.phosphorDim}
-          emissive={COLORS.phosphor}
+          color={accentColorDim}
+          emissive={accentColor}
           emissiveIntensity={0.5}
           metalness={0.3}
           roughness={0.15}
@@ -81,8 +94,8 @@ export const Ship = forwardRef<THREE.Group>(function Ship(_props, ref) {
           <mesh position={[0, 0, 0.32]} rotation={[Math.PI / 2, 0, 0]} userData={{ shipAccent: true }}>
             <coneGeometry args={[0.11, 0.4, 8]} />
             <meshStandardMaterial
-              color={COLORS.phosphor}
-              emissive={COLORS.phosphor}
+              color={accentColor}
+              emissive={accentColor}
               emissiveIntensity={2.2}
               toneMapped={false}
             />
@@ -91,7 +104,7 @@ export const Ship = forwardRef<THREE.Group>(function Ship(_props, ref) {
       ))}
 
       <pointLight
-        color={COLORS.phosphor}
+        color={accentColor}
         intensity={3}
         distance={5}
         position={[0, 0.1, 0.9]}
