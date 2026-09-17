@@ -252,13 +252,12 @@
 .anaglyph-toggle {
   pointer-events: all;
   font-family: "Consolas", monospace;
+  /* Bumped from 12px for a touch more presence — but NOT bold, and back to
+     the original #d9e5d1: bold plus a brighter near-white (#eef5f2, tried
+     first) read as an overlit glow against this dark fill, harder to read
+     than the plain resting weight, not easier. */
   font-size: 13px;
-  font-weight: bold;
-  /* Was #d9e5d1 — legible by contrast math alone (~13:1 against the dark
-     fill below), but small monospace text at that tone still read as
-     dim/hard to make out in practice. A brighter, whiter tone plus the
-     bold weight above reads noticeably crisper at this size. */
-  color: #eef5f2;
+  color: #d9e5d1;
   background: rgba(16, 21, 14, 0.85);
   border: 1px solid #1c5f73;
   border-radius: 5px;
