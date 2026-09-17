@@ -39,7 +39,16 @@ import { AimLine, LockReticle, AIM_LINE_LENGTH } from "./Sight";
 import { WeakPoint } from "./WeakPoint";
 import { Anomaly } from "./Anomaly";
 import { RemoteShip } from "./RemoteShip";
-import { getOwnSessionId, getRemotePlayers, isCoOpConnected, joinCoOp, reportOwnPosition } from "../net/coop";
+import {
+  getOwnSessionId,
+  getRemotePlayers,
+  getSharedEnemiesAlive,
+  getSharedFormation,
+  isCoOpConnected,
+  joinCoOp,
+  reportEnemyHit,
+  reportOwnPosition,
+} from "../net/coop";
 
 // Co-op is an opt-in proof-of-concept (see net/coop.ts + server/src/rooms/
 // co-op-survival.ts for the exact scope) — a URL flag rather than a UI
@@ -573,6 +582,15 @@ export function Scene() {
   const remoteShipRefs = useRef<React.RefObject<THREE.Group | null>[]>(
     Array.from({ length: MAX_REMOTE_SHIPS }, () => createRef<THREE.Group>()),
   );
+  // Shared formation/kill sync (see net/coop.ts's own comment) — 0 means
+  // "not yet initialized," which deliberately differs from the server's
+  // own starting wave (1), so the very first coop-connected frame always
+  // runs a real sync rather than assuming it already matches.
+  const coopKnownWave = useRef(0);
+  // Last frame's shared alive/dead snapshot — compared against the
+  // latest one each frame so only actual true->false TRANSITIONS trigger
+  // applySharedEnemyDeath, not every slot every frame.
+  const coopEnemiesAliveMirror = useRef<boolean[] | null>(null);
 
   // The player's own grenade throw (see GRENADE in config/constants.ts) —
   // reuses the same Pool/spawn machinery as the bolt pools above (it's
@@ -918,6 +936,30 @@ export function Scene() {
   }
 
   /**
+   * Co-op proof-of-concept (see net/coop.ts): applies a kill the SERVER
+   * already confirmed (this grid slot just flipped alive->dead in the
+   * shared state), to every connected client uniformly — including
+   * whichever one actually fired the shot, since that client never kills
+   * locally on its own hit-test anymore in coop mode (see the player-bolt
+   * loop below). Deliberately much simpler than applyEnemyHit: no Heavy
+   * 2-hit health, no dive/flank bonus, no pickup drop, no achievement, no
+   * score — none of that is part of the shared state yet (see the room's
+   * own class comment for the full list of what's still local-only).
+   */
+  function applySharedEnemyDeath(formation: THREE.Group, e: number) {
+    const local = layout[e];
+    const ex = formation.position.x + local[0];
+    const ey = formation.position.y + local[1];
+    const ez = formation.position.z + local[2];
+    enemyAlive.current[e] = false;
+    enemiesRef.current?.setEnemy(e, null);
+    explosions.trigger(new THREE.Vector3(ex, ey, ez), COLORS.amber);
+    sound.enemyHit();
+    aliveCount.current -= 1;
+    useGameStore.getState().setEnemiesRemaining(aliveCount.current);
+  }
+
+  /**
    * Applies one player-bolt hit to alive enemy `e` — factored out of the
    * live per-frame hit-test loop so a dev-only debug hook
    * (window.__nexusDebug.applyPlayerHitDebug) can call the exact same
@@ -1249,6 +1291,10 @@ export function Scene() {
           coopOwnSessionId: getOwnSessionId(),
           coopConnected: isCoOpConnected(),
           remoteShipRefsArr: remoteShipRefs.current.map((r) => r.current),
+          coopSharedFormation: getSharedFormation(),
+          coopSharedEnemiesAlive: getSharedEnemiesAlive(),
+          coopKnownWaveRef: coopKnownWave,
+          reportEnemyHitDebug: (e: number) => reportEnemyHit(e),
           bossWeakAlignedRef: bossWeakAligned,
           anomalyRef: anomalyRef.current,
           anomalyActiveRef: anomalyActive,
@@ -1444,6 +1490,45 @@ export function Scene() {
         FORMATION.startZ + simTime.current * currentDifficulty.current.advanceSpeed,
         FORMATION.frontLineZ,
       );
+
+      // --- co-op proof-of-concept: the server owns formation position AND
+      // which of the 40 grid slots are alive (see net/coop.ts + the
+      // room's own class comment for the exact, deliberately-limited
+      // scope) — override the local calc above with its authoritative
+      // one, and reconcile any alive->dead transition uniformly for every
+      // connected client via applySharedEnemyDeath, including whichever
+      // one actually fired (see the player-bolt hit-test below, which
+      // reports instead of killing locally while connected).
+      if (IS_COOP_MODE && isCoOpConnected()) {
+        const shared = getSharedFormation();
+        if (shared) {
+          formation.position.x = shared.x;
+          formation.position.z = shared.z;
+          if (shared.wave !== coopKnownWave.current) {
+            // A fresh wave on the server — reuse the exact same reset
+            // single-player already relies on (enemyAlive/dive/flank
+            // state, aliveCount, the store's own wave counter) rather
+            // than re-deriving a second version of it here. Boss waves
+            // still spawn independently per-client with zero sync (see
+            // the room's own class comment) — an accepted, documented gap
+            // for this slice, not something this call makes any worse.
+            coopKnownWave.current = shared.wave;
+            spawnWave(formation, shared.wave);
+          }
+        }
+        const sharedAlive = getSharedEnemiesAlive();
+        if (sharedAlive) {
+          const prev = coopEnemiesAliveMirror.current;
+          if (prev) {
+            for (let e = 0; e < ENEMY_COUNT; e++) {
+              if (prev[e] && !sharedAlive[e] && enemyAlive.current[e]) {
+                applySharedEnemyDeath(formation, e);
+              }
+            }
+          }
+          coopEnemiesAliveMirror.current = sharedAlive;
+        }
+      }
 
       // --- wave entrance: the whole formation scales in from nothing right
       // after spawning (see WAVE_ENTRANCE_DURATION/easeOutBack) instead of
@@ -2258,7 +2343,20 @@ export function Scene() {
           if (dx * dx + dy * dy + dz * dz <= HIT_RADIUS.playerProjectileVsEnemy ** 2) {
             playerBolts.current.active[i] = false;
             mesh.visible = false;
-            applyEnemyHit(formation, e);
+            // Co-op proof-of-concept: while connected, this client never
+            // kills a shared grid enemy on its own local hit-test — it
+            // only reports the hit, and applySharedEnemyDeath (see the
+            // formation sync block above) is what actually applies the
+            // kill, uniformly, once the server confirms it. A DIVING
+            // enemy isn't part of the shared state at all yet (that's
+            // still purely local RNG per client — see the room's own
+            // class comment), so it keeps using the normal single-player
+            // path regardless of coop mode.
+            if (IS_COOP_MODE && isCoOpConnected() && !dive) {
+              reportEnemyHit(e);
+            } else {
+              applyEnemyHit(formation, e);
+            }
             break;
           }
         }

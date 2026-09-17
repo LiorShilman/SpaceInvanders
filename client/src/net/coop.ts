@@ -2,12 +2,14 @@ import { Client, Room, getStateCallbacks } from "colyseus.js";
 
 // PROOF-OF-CONCEPT slice (see server/src/rooms/co-op-survival.ts's own
 // comment for the exact scope): each client still simulates its own game
-// entirely client-side, exactly like single-player — this module only
-// relays this ship's own position/rotation to the room, and mirrors back
-// every OTHER connected player's last-known position/rotation so Scene.tsx
-// can render a RemoteShip for each. There is no shared enemy/wave/boss
-// state, no server-side hit detection, and no reconciliation — that's the
-// real Phase 1 work this slice exists to validate the plumbing for.
+// entirely client-side, exactly like single-player, EXCEPT for the one
+// piece of state this module now also exposes — the shared grid
+// formation's position and its 40-entry alive/dead array, both owned and
+// ticked by the server. Ship positions are still purely relayed (each
+// client is authoritative over its own), and everything else (boss,
+// Heavy/health, dive/flank, pickups, score) stays entirely local and
+// unsynced — see Scene.tsx's own coop sync block for exactly how the
+// shared formation/kill state gets applied.
 
 export interface RemotePlayer {
   x: number;
@@ -15,6 +17,12 @@ export interface RemotePlayer {
   z: number;
   rotZ: number;
   name: string;
+}
+
+export interface SharedFormation {
+  x: number;
+  z: number;
+  wave: number;
 }
 
 // How often this client reports its own position — far below the 60fps
@@ -44,6 +52,52 @@ export function getOwnSessionId(): string | null {
 
 export function isCoOpConnected(): boolean {
   return room !== null;
+}
+
+/** Reads the room's current formation position + wave directly off the
+ * synced schema — a plain poll, not an event subscription, since
+ * Scene.tsx's own per-frame loop already calls this every frame anyway
+ * (same reasoning reportOwnPosition below needs no callback machinery of
+ * its own). No shared/ package yet (see its own README), hence the `as`
+ * cast instead of a real generated type. */
+export function getSharedFormation(): SharedFormation | null {
+  if (!room) return null;
+  const s = room.state as unknown as { formationX?: number; formationZ?: number; wave?: number };
+  // Same brief "not synced yet" window as getSharedEnemiesAlive below —
+  // `wave` in particular being momentarily undefined here once caused a
+  // real crash downstream: Scene.tsx compares it against coopKnownWave
+  // and, on a mismatch, calls spawnWave(formation, wave), which indexes
+  // WAVE_SHAPES with (wave - 1) — NaN from an undefined wave produced an
+  // out-of-bounds `undefined`, then a "shape is not a function" TypeError
+  // several calls deep. Guard here instead of trusting every caller downstream
+  // to check each field individually.
+  if (s.formationX === undefined || s.formationZ === undefined || s.wave === undefined) return null;
+  return { x: s.formationX, z: s.formationZ, wave: s.wave };
+}
+
+/** A fresh plain array snapshot each call — cheap at 40 booleans, and
+ * simpler than wiring ArraySchema's own change callbacks for a value
+ * Scene.tsx already diffs itself frame-to-frame (see
+ * coopEnemiesAliveMirror in Scene.tsx). */
+export function getSharedEnemiesAlive(): boolean[] | null {
+  if (!room) return null;
+  const s = room.state as unknown as { enemiesAlive: boolean[] | undefined };
+  // room.state itself exists the instant joinOrCreate resolves, but the
+  // very first full-state patch (this array included) can arrive a beat
+  // later — reading it in that brief window would otherwise throw
+  // (Array.from(undefined)) instead of just "no shared kill state yet."
+  if (!s.enemiesAlive) return null;
+  return Array.from(s.enemiesAlive);
+}
+
+/** Reports that THIS client's own local hit-test detected a hit on grid
+ * slot `index` — see the room's own hitEnemy handler for what happens
+ * next. Fire-and-forget: the actual "this enemy is now dead" truth only
+ * ever arrives back via getSharedEnemiesAlive(), applied uniformly to
+ * every client (including the shooter) by Scene.tsx's own sync block,
+ * never assumed locally just because this was sent. */
+export function reportEnemyHit(index: number) {
+  room?.send("hitEnemy", { index });
 }
 
 /** Connects and joins the shared co-op room. Safe to call once; a second
