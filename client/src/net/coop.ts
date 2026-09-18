@@ -17,6 +17,11 @@ export interface RemotePlayer {
   z: number;
   rotZ: number;
   name: string;
+  // Co-op revive (see REVIVE in config/constants.ts) — a downed teammate
+  // is still rendered (RemoteShip doesn't disappear), Scene.tsx just
+  // tints/marks it differently and treats proximity to it as revive
+  // progress instead of anything harmful.
+  downed: boolean;
 }
 
 export interface SharedFormation {
@@ -107,7 +112,7 @@ export async function joinCoOp(serverUrl: string): Promise<void> {
   if (room) return;
   client = new Client(serverUrl);
   const joined = await client.joinOrCreate<{
-    players: { x: number; y: number; z: number; rotZ: number; name: string };
+    players: { x: number; y: number; z: number; rotZ: number; name: string; downed: boolean };
   }>("co_op_survival");
   room = joined;
 
@@ -121,7 +126,14 @@ export async function joinCoOp(serverUrl: string): Promise<void> {
   $(room.state).players.onAdd((player, sessionId) => {
     if (sessionId === room?.sessionId) return; // never render our own ship as a remote one
     const sync = () => {
-      remotePlayers.set(sessionId, { x: player.x, y: player.y, z: player.z, rotZ: player.rotZ, name: player.name });
+      remotePlayers.set(sessionId, {
+        x: player.x,
+        y: player.y,
+        z: player.z,
+        rotZ: player.rotZ,
+        name: player.name,
+        downed: player.downed,
+      });
     };
     sync();
     $(player).onChange(sync);
@@ -152,4 +164,12 @@ export function reportOwnPosition(x: number, y: number, z: number, rotZ: number)
   if (now - lastSendAt < SEND_INTERVAL_MS) return;
   lastSendAt = now;
   room.send("move", { x, y, z, rotZ });
+}
+
+/** Co-op revive (see REVIVE in config/constants.ts) — reports THIS
+ * client's own downed/revived transition. Unlike reportOwnPosition,
+ * never throttled: this fires once on an actual state change, not every
+ * frame. */
+export function reportDownedState(downed: boolean) {
+  room?.send("downed", { downed });
 }

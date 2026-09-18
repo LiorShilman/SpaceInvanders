@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { ACHIEVEMENTS, useGameStore } from "../state/gameStore";
-import { COLORS, FLANKER, SHIP } from "../config/constants";
+import { COLORS, FLANKER, REVIVE, SHIP } from "../config/constants";
 import { isMuted, setMuted } from "../audio/sound";
 import "./hud.css";
 
@@ -125,6 +125,8 @@ export function HUD({
     bossHealth,
     bossMaxHealth,
     bossWeak,
+    downed,
+    downedAt,
     reset,
     clearBanner,
     clearAchievementToast,
@@ -170,6 +172,10 @@ export function HUD({
   // Grenade cooldown countdown — same derivation shape as weaponSecondsLeft,
   // but here 0 means "ready to throw" (G) rather than "no timed weapon".
   const grenadeSecondsLeft = Math.max(0, Math.ceil((grenadeReadyAt - now) / 1000));
+  // Co-op revive countdown (see REVIVE in config/constants.ts) — how long
+  // until Scene's own per-frame timeout check gives up and falls through
+  // to a normal life loss.
+  const downedSecondsLeft = Math.max(0, Math.ceil((downedAt + REVIVE.timeout * 1000 - now) / 1000));
   const grenadeReady = grenadeSecondsLeft === 0;
 
   // The wave-cleared banner is transient — it clears itself a couple of
@@ -341,6 +347,20 @@ export function HUD({
           <span className="boss-weak-pill" data-weak={bossWeak}>
             {bossWeak ? "פגיע!" : "מוגן"}
           </span>
+        </div>
+      )}
+
+      {/* Co-op revive (see REVIVE in config/constants.ts) — persists for
+          the whole downed window rather than a transient banner, since
+          it's an ongoing state the player needs to keep glancing at
+          (their own countdown), not a one-off event. Deliberately NOT a
+          modal .hud-overlay: the game keeps running while downed (a
+          teammate needs to actually see the world moving to fly over and
+          revive), so nothing here pauses anything. */}
+      {downed && status === "playing" && (
+        <div className="downed-banner">
+          <div className="downed-title">מושבת! ממתין לחילוץ</div>
+          <div className="downed-sub">שותף צריך להתקרב אליך — {downedSecondsLeft} שניות</div>
         </div>
       )}
 

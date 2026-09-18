@@ -172,6 +172,30 @@ export const SHIP = {
   criticalHealthPct: 0.4,
 };
 
+// Co-op revive (see net/coop.ts + gameStore's own damageShip/handleInvasion)
+// — the "revive" the docs/GAME_PLAN.md summary always named as part of the
+// Co-op vision. A lethal hit with at least one teammate connected goes
+// DOWN instead of costing a life outright; a nearby, still-standing ally
+// can save them within the window below. Single-player (and coop with
+// nobody else connected) never triggers this at all — see the store's own
+// isCoOpConnected()/getRemotePlayers() check.
+export const REVIVE = {
+  // How close a non-downed ally must stay to actually be reviving.
+  radius: 3,
+  // Continuous time an ally must remain within `radius` to complete a
+  // revive — not instant on contact, so it reads as an active choice
+  // (fly over and hold position) rather than an accidental drive-by.
+  channelDuration: 2,
+  // Restored on a successful revive — a partial recovery, not a full
+  // heal, so getting picked up still leaves you genuinely vulnerable for
+  // a moment rather than as good as new.
+  reviveHealthPct: 0.5,
+  // If nobody revives in time, falls through to the exact same life-loss
+  // outcome a normal (non-coop) lethal hit would have caused immediately
+  // — being downed is a second chance, not a way to stall forever.
+  timeout: 15,
+};
+
 export const PROJECTILE = {
   playerSpeed: 22,
   enemySpeed: 10,

@@ -47,6 +47,12 @@ export class Player extends Schema {
   @type("number") z = 8;
   @type("number") rotZ = 0;
   @type("string") name = "";
+  // Co-op revive (see REVIVE in client/src/config/constants.ts) — set by
+  // the client itself the instant it goes down / gets revived, purely
+  // relayed here exactly like x/y/z/rotZ above. No server-side validation
+  // at all (same as everything else in this room): a client could report
+  // itself downed or revived at will.
+  @type("boolean") downed = false;
 }
 
 export class CoOpState extends Schema {
@@ -85,6 +91,15 @@ export class CoOpSurvivalRoom extends Room<CoOpState> {
       player.y = data.y;
       player.z = data.z;
       player.rotZ = data.rotZ;
+    });
+
+    // Co-op revive (see Player.downed's own comment above) — a client
+    // reports its own downed/revived transition; relayed to every other
+    // client via the schema exactly like move above.
+    this.onMessage("downed", (client, data: { downed: boolean }) => {
+      const player = this.state.players.get(client.sessionId);
+      if (!player) return;
+      player.downed = data.downed;
     });
 
     // A client reports the INDEX it locally detected a hit on — no

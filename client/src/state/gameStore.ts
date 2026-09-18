@@ -1,5 +1,6 @@
 import { create } from "zustand";
 import { BOSS, COMBO, GRENADE, SHIP } from "../config/constants";
+import { getRemotePlayers, isCoOpConnected } from "../net/coop";
 
 // "cleared" was a dead end — no such terminal state anymore. Beating a wave
 // spawns a new, harder one (see Scene's spawnWave); only running out of
@@ -166,6 +167,18 @@ interface GameState {
   // actually gates firing, this is purely a display copy for HUD.tsx's
   // readiness indicator (same store-vs-ref split as radarBlips/bossHealth).
   grenadeReadyAt: number;
+  // Co-op revive (see REVIVE in config/constants.ts + net/coop.ts) — a
+  // lethal hit that would normally cost a life instead sets this when at
+  // least one teammate is connected, giving them a window to fly close
+  // and revive before it falls through to the ordinary life-loss path
+  // (see loseLifeOrGameOver). Single-player (or coop with nobody else
+  // connected) never sets this at all — damageShip/handleInvasion behave
+  // exactly as they always did in that case.
+  downed: boolean;
+  // Wall-clock timestamp downed became true — Scene's own per-frame coop
+  // block compares this against REVIVE.timeout to know when to give up
+  // and fall through to a normal life loss.
+  downedAt: number;
   // Persisted across runs (localStorage) — NOT part of `initial` below, so
   // reset() (a shallow merge, not a replace) never touches these.
   highScore: number;
@@ -223,6 +236,15 @@ interface GameState {
    * so, Scene must also reset the whole wave, not just the ship, or the
    * still-broken-through formation would re-trigger this next frame. */
   handleInvasion: () => boolean;
+  /** A teammate successfully revived this player (see REVIVE in
+   * config/constants.ts) — restores a partial health amount and clears
+   * `downed`, without touching lives at all: getting picked up costs
+   * nothing but the time it took. */
+  revive: (health: number) => void;
+  /** Nobody revived in time (see REVIVE.timeout) — Scene calls this once
+   * to fall through to the exact same life-loss/game-over outcome a
+   * normal (non-coop) lethal hit would have caused immediately. */
+  resolveDownedTimeout: () => void;
   registerKill: (bonus?: number) => void;
   collectHealth: (amount: number) => void;
   collectWeapon: (kind: WeaponKind, durationMs: number) => void;
@@ -286,6 +308,8 @@ const initial = {
   weaponExpiresAt: 0,
   invulnerableUntil: 0,
   grenadeReadyAt: 0,
+  downed: false,
+  downedAt: 0,
   paused: false,
   bossActive: false,
   bossHealth: 0,
@@ -307,6 +331,43 @@ function settleHighScore(score: number, wave: number, prevHigh: { highScore: num
   return { highScore, highWave };
 }
 
+/**
+ * The shared "outright life loss" outcome both damageShip and
+ * handleInvasion already computed independently (each had its own copy) —
+ * factored out so the new co-op-revive timeout path (see
+ * resolveDownedTimeout) can fall through to the EXACT same result a normal
+ * lethal hit always produced, instead of a third, easy-to-drift copy of
+ * this logic. Pure: returns the partial state to pass to set(), doesn't
+ * call it itself — same convention settleHighScore/settleLeaderboard above
+ * already use.
+ */
+function loseLifeOrGameOver(
+  s: Pick<GameState, "lives" | "score" | "wave" | "leaderboard" | "highScore" | "highWave">,
+  bannerText: string,
+) {
+  if (s.lives > 0) {
+    return {
+      lives: s.lives - 1,
+      health: SHIP.maxHealth,
+      invulnerableUntil: Date.now() + SHIP.respawnInvulnerability * 1000,
+      bannerText,
+      downed: false,
+    };
+  }
+  const high = settleHighScore(s.score, s.wave, s);
+  const leaderboard = settleLeaderboard(s.score, s.wave, s.leaderboard);
+  return { health: 0, status: "gameover" as GameStatus, ...high, leaderboard, downed: false };
+}
+
+/** Is a lethal hit right now a co-op-revive candidate (down instead of an
+ * outright life loss)? Only true with a teammate actually connected —
+ * single-player, or coop with nobody else in the room yet, always falls
+ * straight through to loseLifeOrGameOver exactly as it did before this
+ * feature existed. */
+function canGoDown(): boolean {
+  return isCoOpConnected() && getRemotePlayers().size > 0;
+}
+
 const storedHigh = loadHighScore();
 const storedLeaderboard = loadLeaderboard();
 const storedAchievements = loadUnlockedAchievements();
@@ -323,44 +384,50 @@ export const useGameStore = create<GameState>((set, get) => ({
     const s = get();
     if (s.status !== "playing") return;
     if (Date.now() < s.invulnerableUntil) return; // mid-respawn grace period
+    if (s.downed) return; // already down — a normal hit while downed isn't a second life-loss event
     const health = Math.max(0, s.health - amount);
     if (health > 0) {
       set({ health });
       return;
     }
-    if (s.lives > 0) {
-      const lives = s.lives - 1;
-      set({
-        lives,
-        health: SHIP.maxHealth,
-        invulnerableUntil: Date.now() + SHIP.respawnInvulnerability * 1000,
-        bannerText: `הפגיעה הייתה קטלנית — נותרו ${lives} חיים`,
-      });
-    } else {
-      const high = settleHighScore(s.score, s.wave, s);
-      const leaderboard = settleLeaderboard(s.score, s.wave, s.leaderboard);
-      set({ health: 0, status: "gameover", ...high, leaderboard });
+    // Co-op revive (see REVIVE in config/constants.ts): a teammate is
+    // actually connected, so this lethal hit becomes a rescue window
+    // instead of an outright life loss. See resolveDownedTimeout for what
+    // happens if nobody makes it in time, and revive for a successful
+    // save — both live below, not here, so this branch stays a single
+    // state transition rather than owning the whole lifecycle.
+    if (canGoDown()) {
+      set({ health: 0, downed: true, downedAt: Date.now(), bannerText: "הספינה מושבתת! זקוקים להצלה" });
+      return;
     }
+    set(loseLifeOrGameOver(s, `הפגיעה הייתה קטלנית — נותרו ${s.lives - 1} חיים`));
   },
 
+  revive: (health) =>
+    set({ downed: false, health, invulnerableUntil: Date.now() + SHIP.respawnInvulnerability * 1000, bannerText: "נחלצת!" }),
+
+  resolveDownedTimeout: () => {
+    const s = get();
+    if (!s.downed) return;
+    set(loseLifeOrGameOver(s, `לא הגיע חילוץ בזמן — נותרו ${s.lives - 1} חיים`));
+  },
+
+  // NOTE: the formation reaching the ship (an "invasion," distinct from
+  // taking direct damage) does NOT go through the co-op revive path above
+  // — always an outright life loss/game-over exactly as before, in both
+  // single-player and coop. A real gap (see server/README.md's own list),
+  // not an oversight: reusing loseLifeOrGameOver here was straightforward,
+  // but this function's OWN return value (whether the run is still alive)
+  // is what tells Scene whether to also reset the wave — giving it a
+  // third "downed, ask me again later" outcome to handle would have
+  // reached well past what this specific slice was scoped to.
   handleInvasion: () => {
     const s = get();
     if (s.status !== "playing") return false;
     if (Date.now() < s.invulnerableUntil) return false;
-    if (s.lives > 0) {
-      const lives = s.lives - 1;
-      set({
-        lives,
-        health: SHIP.maxHealth,
-        invulnerableUntil: Date.now() + SHIP.respawnInvulnerability * 1000,
-        bannerText: `הגל פרץ! נותרו ${lives} חיים`,
-      });
-      return true;
-    }
-    const high = settleHighScore(s.score, s.wave, s);
-    const leaderboard = settleLeaderboard(s.score, s.wave, s.leaderboard);
-    set({ health: 0, status: "gameover", ...high, leaderboard });
-    return false;
+    const stillAlive = s.lives > 0;
+    set(loseLifeOrGameOver(s, stillAlive ? `הגל פרץ! נותרו ${s.lives - 1} חיים` : ""));
+    return stillAlive;
   },
 
   // Replaces the old flat addScore(100) — every kill now goes through the

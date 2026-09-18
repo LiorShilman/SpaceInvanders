@@ -14,6 +14,7 @@ import {
   HIT_RADIUS,
   PICKUP,
   PROJECTILE,
+  REVIVE,
   SHIELD,
   SHIP,
   WAVE_ENTRANCE_DURATION,
@@ -46,6 +47,7 @@ import {
   getSharedFormation,
   isCoOpConnected,
   joinCoOp,
+  reportDownedState,
   reportEnemyHit,
   reportOwnPosition,
 } from "../net/coop";
@@ -591,6 +593,14 @@ export function Scene() {
   // latest one each frame so only actual true->false TRANSITIONS trigger
   // applySharedEnemyDeath, not every slot every frame.
   const coopEnemiesAliveMirror = useRef<boolean[] | null>(null);
+  // Co-op revive (see REVIVE in config/constants.ts). coopWasDowned tracks
+  // the LAST reported downed state so reportDownedState only fires on an
+  // actual transition, not every frame; reviveChannelTime accumulates
+  // while a non-downed ally sits within REVIVE.radius and resets the
+  // instant they leave (a full restart, not a decay — see its own
+  // per-frame comment for why that's the right call here).
+  const coopWasDowned = useRef(false);
+  const reviveChannelTime = useRef(0);
 
   // The player's own grenade throw (see GRENADE in config/constants.ts) —
   // reuses the same Pool/spawn machinery as the bolt pools above (it's
@@ -1303,17 +1313,71 @@ export function Scene() {
           forceSpawnAnomalyDebug: () => {
             nextAnomalyAt.current = simTime.current;
           },
+          coopWasDownedRef: coopWasDowned,
+          reviveChannelTimeRef: reviveChannelTime,
         };
       }
 
+      // --- co-op revive: while downed, wait for a nearby non-downed ally
+      // to channel a revive, or time out into a normal life loss (see
+      // REVIVE in config/constants.ts + gameStore's own revive/
+      // resolveDownedTimeout, and damageShip for how a lethal hit becomes
+      // "downed" in the first place). Runs every frame regardless of
+      // downed state, since it's also what detects the transition INTO
+      // downed and reports it — not just what handles being down.
+      const coopDownedNow = useGameStore.getState().downed;
+      if (IS_COOP_MODE) {
+        if (coopDownedNow !== coopWasDowned.current) {
+          coopWasDowned.current = coopDownedNow;
+          reportDownedState(coopDownedNow);
+          reviveChannelTime.current = 0;
+        }
+        if (coopDownedNow) {
+          let allyNear = false;
+          for (const remote of getRemotePlayers().values()) {
+            if (remote.downed) continue; // a downed ally can't revive you either
+            const dx = remote.x - ship.position.x;
+            const dy = remote.y - ship.position.y;
+            const dz = remote.z - ship.position.z;
+            if (dx * dx + dy * dy + dz * dz <= REVIVE.radius ** 2) {
+              allyNear = true;
+              break;
+            }
+          }
+          if (allyNear) {
+            reviveChannelTime.current += delta;
+            if (reviveChannelTime.current >= REVIVE.channelDuration) {
+              useGameStore.getState().revive(SHIP.maxHealth * REVIVE.reviveHealthPct);
+            }
+          } else {
+            // A decay, not a hard reset to 0 — remote position only
+            // updates as often as the ally's own throttled reports arrive
+            // (see SEND_HZ in net/coop.ts), so a single frame reading a
+            // slightly-stale position right at the radius's edge is
+            // normal network jitter, not the ally actually leaving. Full
+            // reset was tried first and measurably over-punished this in
+            // testing (channel progress barely accumulated at all over a
+            // real two-browser connection); decaying twice as fast as it
+            // builds still fully undoes a genuine "flew away" within
+            // about a second, without punishing one jittery frame.
+            reviveChannelTime.current = Math.max(0, reviveChannelTime.current - delta * 2);
+          }
+          if (Date.now() - useGameStore.getState().downedAt >= REVIVE.timeout * 1000) {
+            useGameStore.getState().resolveDownedTimeout();
+          }
+        }
+      }
+
       // --- ship movement -------------------------------------------------
-      const move = new THREE.Vector3(
-        (input.current.right ? 1 : 0) - (input.current.left ? 1 : 0),
-        (input.current.up ? 1 : 0) - (input.current.down ? 1 : 0),
-        // Z/C: real forward/back piloting, not just an X/Y plane. Forward
-        // (-Z) is toward the wave.
-        (input.current.backward ? 1 : 0) - (input.current.forward ? 1 : 0),
-      );
+      const move = coopDownedNow
+        ? new THREE.Vector3()
+        : new THREE.Vector3(
+            (input.current.right ? 1 : 0) - (input.current.left ? 1 : 0),
+            (input.current.up ? 1 : 0) - (input.current.down ? 1 : 0),
+            // Z/C: real forward/back piloting, not just an X/Y plane.
+            // Forward (-Z) is toward the wave.
+            (input.current.backward ? 1 : 0) - (input.current.forward ? 1 : 0),
+          );
       if (move.lengthSq() > 0) {
         ship.position.x += move.x * SHIP.speed * delta;
         ship.position.y += move.y * SHIP.speed * delta;
@@ -1322,10 +1386,13 @@ export function Scene() {
         ship.position.y = THREE.MathUtils.clamp(ship.position.y, ARENA.minY, ARENA.maxY);
         ship.position.z = THREE.MathUtils.clamp(ship.position.z, ARENA.minZ, ARENA.maxZ);
       }
-      ship.rotation.z = THREE.MathUtils.lerp(ship.rotation.z, -move.x * 0.35, 0.15);
+      // Downed: locked into a limp, nose-down tumble instead of tracking
+      // input — the clearest possible "you don't have control right now"
+      // tell, on top of the HUD's own overlay.
+      ship.rotation.z = THREE.MathUtils.lerp(ship.rotation.z, coopDownedNow ? Math.PI * 0.4 : -move.x * 0.35, 0.15);
       // A slight forward pitch when diving in, back pitch when pulling out —
       // one more piece of "this is a real cockpit," not a flat plane sled.
-      ship.rotation.x = THREE.MathUtils.lerp(ship.rotation.x, move.z * 0.2, 0.15);
+      ship.rotation.x = THREE.MathUtils.lerp(ship.rotation.x, coopDownedNow ? 0.5 : move.z * 0.2, 0.15);
 
       // --- gravity anomaly: pulls the ship off course while active (see
       // ANOMALY in config/constants.ts) — a real force to fight with
@@ -1439,7 +1506,7 @@ export function Scene() {
 
       // --- player firing ---------------------------------------------------
       fireCooldown.current -= delta;
-      if (input.current.fire && fireCooldown.current <= 0) {
+      if (!coopDownedNow && input.current.fire && fireCooldown.current <= 0) {
         const heldWeapon = weaponRef.current.kind;
         if (heldWeapon === "spread") {
           fireCooldown.current = WEAPON.spread.cooldown;
@@ -1464,7 +1531,7 @@ export function Scene() {
       // own (much shorter) one — held or tapped, the cooldown alone paces
       // how often it can actually go off either way.
       grenadeCooldown.current -= delta;
-      if (input.current.grenade && grenadeCooldown.current <= 0) {
+      if (!coopDownedNow && input.current.grenade && grenadeCooldown.current <= 0) {
         grenadeCooldown.current = GRENADE.cooldown;
         const slot = grenadePool.current.active.indexOf(false);
         if (slot !== -1) {

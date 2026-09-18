@@ -383,6 +383,49 @@
   }
 }
 
+/* Co-op revive (see REVIVE in config/constants.ts) — persistent (no fade-
+   out, unlike .wave-banner below), and deliberately urgent (amber/red,
+   a pulsing glow) since this is a real "the run is at stake" state, not
+   a passing status update. Sits below the top HUD bar/boss bar rather
+   than overlapping either. */
+.downed-banner {
+  position: absolute;
+  top: 90px;
+  left: 50%;
+  transform: translateX(-50%);
+  direction: rtl;
+  text-align: center;
+  font-family: "Consolas", monospace;
+  background: rgba(10, 13, 10, 0.75);
+  border: 1px solid rgba(255, 107, 74, 0.6);
+  border-radius: 8px;
+  padding: 10px 24px;
+  animation: downed-pulse 1.1s ease-in-out infinite;
+}
+
+.downed-title {
+  font-size: 16px;
+  font-weight: bold;
+  color: #ff6b4a;
+  text-shadow: 0 0 12px rgba(255, 107, 74, 0.8);
+}
+
+.downed-sub {
+  font-size: 13px;
+  color: #d9e5d1;
+  margin-top: 2px;
+}
+
+@keyframes downed-pulse {
+  0%,
+  100% {
+    box-shadow: 0 0 10px rgba(255, 107, 74, 0.3);
+  }
+  50% {
+    box-shadow: 0 0 22px rgba(255, 107, 74, 0.7);
+  }
+}
+
 .wave-banner {
   position: absolute;
   top: 90px;
